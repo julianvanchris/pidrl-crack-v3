@@ -2100,6 +2100,37 @@ def main():
                           "(happens once — subsequent queries respond in seconds). "
                           "You can keep using the dashboard while it loads.")
 
+            # ── Backend diagnostics (esp. for the deployed site) ───────────
+            # When no LLM backend is active, or Groq is configured, show
+            # exactly WHY so cloud setup issues are visible instead of a
+            # silent rule-based fallback.
+            if _groq:
+                # Live connectivity check, run once per session (cached).
+                if "groq_ping" not in st.session_state:
+                    with st.spinner("Checking Groq connection…"):
+                        st.session_state["groq_ping"] = advisor.groq_ping()
+                _ok, _detail = st.session_state["groq_ping"]
+                if _ok:
+                    st.caption(f"✅ Groq backend: {_detail}")
+                else:
+                    st.error(
+                        f"⚠️ **Groq is configured but the call failed** — answers are "
+                        f"falling back to rule-based.\n\n**Reason:** `{_detail}`\n\n"
+                        "Fix: check the API key is valid, or set a current model via the "
+                        "`GROQ_MODEL` secret (e.g. `llama-3.1-8b-instant`).")
+                    if st.button("🔄 Recheck Groq", key="groq_recheck"):
+                        st.session_state.pop("groq_ping", None); st.rerun()
+            elif not st_info["ollama_up"]:
+                # Deployed with no LLM backend at all → rule-based only.
+                _pkg = "✅" if st_info.get("has_groq_pkg") else "❌ not installed"
+                _key = "✅ set" if st_info.get("groq_key_set") else "❌ not set"
+                st.warning(
+                    "🤖 **The advisor is running in rule-based mode (no live LLM).** "
+                    "To turn on the free Groq LLM on this deployed site: open "
+                    "**⋮ → Settings → Secrets** and add `GROQ_API_KEY = \"gsk_…\"` "
+                    "(get a free key at console.groq.com), then the app reboots automatically.\n\n"
+                    f"Diagnostics — groq package: {_pkg} · GROQ_API_KEY: {_key}")
+
             # ── Model health banner — auto-detected broken template ────────
             # Catches the case where main_3d_v4.py/llm_advisor_v4.py were
             # updated with the template fix, but the OLLAMA MODEL itself

@@ -687,38 +687,87 @@ class GroqEngine:
     when GROQ_API_KEY is set; locally (no key) the advisor keeps using Ollama.
     """
 
+    # Tried in order — Groq periodically retires model names, so if the
+    # configured one is decommissioned we transparently fall to the next.
+    FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant",
+                       "llama-3.1-70b-versatile", "llama3-70b-8192"]
+
     def __init__(self, api_key: str, model: str = GROQ_MODEL_DEFAULT):
         self.model  = model
         self.client = Groq(api_key=api_key)
+        self.models = [model] + [m for m in self.FALLBACK_MODELS if m != model]
+        self.last_error = ""
+
+    @staticmethod
+    def _is_model_error(e) -> bool:
+        s = str(e).lower()
+        return ("model" in s and any(k in s for k in
+                ("decommission", "not found", "does not exist", "invalid",
+                 "unavailable", "deprecat")))
+
+    def _messages(self, system, messages):
+        return [{"role": "system", "content": system}] + messages
 
     def stream(self, system: str, messages: list,
                temperature: float = 0.3, max_tokens: int = 700):
-        """Yield response text chunks (OpenAI-compatible streaming)."""
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": system}] + messages,
-            temperature=temperature, max_tokens=max_tokens, top_p=0.9,
-            stream=True,
-        )
-        for chunk in resp:
+        """Yield response text chunks; auto-falls to the next model name if the
+        configured one is decommissioned. Raises non-model errors (auth/rate)
+        so the caller can record them and fall back to rule-based."""
+        last_exc = None
+        for m in self.models:
             try:
-                delta = chunk.choices[0].delta.content
-            except Exception:
-                delta = None
-            if delta:
-                yield delta
+                resp = self.client.chat.completions.create(
+                    model=m, messages=self._messages(system, messages),
+                    temperature=temperature, max_tokens=max_tokens, top_p=0.9,
+                    stream=True,
+                )
+            except Exception as e:
+                last_exc = e; self.last_error = f"{m}: {e}"
+                if self._is_model_error(e):
+                    continue
+                raise
+            self.model = m; self.last_error = ""
+            for chunk in resp:
+                try:
+                    delta = chunk.choices[0].delta.content
+                except Exception:
+                    delta = None
+                if delta:
+                    yield delta
+            return
+        if last_exc:
+            raise last_exc
 
     def generate(self, system: str, prompt: str,
                  temperature: float = 0.3, max_tokens: int = 700) -> str:
-        """Non-streaming completion → full text (or '' on empty)."""
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": prompt}],
-            temperature=temperature, max_tokens=max_tokens, top_p=0.9,
-            stream=False,
-        )
-        return (resp.choices[0].message.content or "").strip()
+        """Non-streaming completion → full text (auto model fallback)."""
+        last_exc = None
+        for m in self.models:
+            try:
+                resp = self.client.chat.completions.create(
+                    model=m, messages=[{"role": "system", "content": system},
+                                       {"role": "user", "content": prompt}],
+                    temperature=temperature, max_tokens=max_tokens, top_p=0.9,
+                    stream=False,
+                )
+                self.model = m; self.last_error = ""
+                return (resp.choices[0].message.content or "").strip()
+            except Exception as e:
+                last_exc = e; self.last_error = f"{m}: {e}"
+                if self._is_model_error(e):
+                    continue
+                raise
+        if last_exc:
+            raise last_exc
+        return ""
+
+    def ping(self):
+        """One-token connectivity/credential check. Returns (ok, error_str)."""
+        try:
+            self.generate("You are a test.", "Reply with: ok", max_tokens=2)
+            return True, ""
+        except Exception as e:
+            return False, str(e)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1209,6 +1258,19 @@ class PILLMAdvisor:
             return "🚨 Severe ヒケ — redesign zone schedule + strong reheat"
         return "🛑 Critical failure — halt production"
 
+    def groq_ping(self):
+        """Live connectivity/credential check for the Groq backend.
+        Returns (ok: bool, detail: str) — used by the UI to show exactly
+        why the cloud LLM is or isn't working on the deployed site."""
+        if not HAS_GROQ:
+            return False, "groq package not installed"
+        if not self.groq_key:
+            return False, "GROQ_API_KEY not set"
+        if self.groq_engine is None:
+            return False, "Groq engine not initialised"
+        ok, err = self.groq_engine.ping()
+        return ok, (f"connected · model {self.groq_engine.model}" if ok else err)
+
     def clear_history(self):
         self._history.clear()
         if self.lc_engine is not None:
@@ -1288,6 +1350,9 @@ class PILLMAdvisor:
             "ollama_up":     alive,
             "groq":          groq_on,
             "groq_model":    self.groq_model if groq_on else "",
+            "has_groq_pkg":  HAS_GROQ,
+            "groq_key_set":  bool(self.groq_key),
+            "groq_error":    getattr(self.groq_engine, "last_error", "") if groq_on else "",
             "models":        self.client.list_models() if alive else [],
             "kb_loaded":     bool(self.kb),
             "rag_active":    self.rag_active,
