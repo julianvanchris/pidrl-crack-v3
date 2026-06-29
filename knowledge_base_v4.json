@@ -1,0 +1,365 @@
+{
+  "version": "v4.1",
+  "created": "2026",
+  "project": "PI-DRL Solidification Control — CBIC × TUAT",
+  "material": {
+    "name": "LCWT401",
+    "product_type": "Deodorant stick",
+    "dimensions": {
+      "radius_cm": 1.25,
+      "height_cm": 4.0
+    },
+    "T_solidus_C": 62.0,
+    "T_liquidus_C": 72.0,
+    "T_mushy_mid_C": 67.0,
+    "k_thermal_WmK": 0.25,
+    "rho_kg_m3": 990.0,
+    "cp_J_kgK": 2000.0,
+    "E_MPa": 1.37,
+    "shrinkage_pct": 8.0,
+    "defect": "Surface sink mark (ヒケ) at top fill point due to shrinkage during solidification"
+  },
+  "trials": {
+    "trial1": {
+      "name": "Trial 1 — Heat Retention Cap",
+      "description": "Heat-retention cap applied near top surface only. Air cooling at room temperature.",
+      "fill_type": "Front-fill",
+      "T_fill_C": 82.0,
+      "T_top_ambient_C": [
+        59,
+        62,
+        63,
+        23
+      ],
+      "T_top_times_min": [
+        0,
+        10,
+        20,
+        44
+      ],
+      "T_bulk_C": [
+        82,
+        70.5,
+        66.2,
+        48.7,
+        45.2
+      ],
+      "T_bulk_times_min": [
+        0,
+        10,
+        20,
+        30,
+        40
+      ],
+      "reheat_events": [
+        {
+          "t_min": 10,
+          "duration_min": 1,
+          "method": "Hot air"
+        },
+        {
+          "t_min": 14,
+          "duration_min": 1,
+          "method": "Hot air"
+        },
+        {
+          "t_min": 19,
+          "duration_min": 1,
+          "method": "Hot air"
+        }
+      ],
+      "observations": {
+        "0min": "Bulk fluid, liquid state",
+        "10min": "Bulk fluid, liquid state",
+        "20min": "Slight fluidity, partial gel",
+        "30min": "No fluidity; slight central sinking",
+        "40min": "Top solidified; slight central sinking (bulk still warm)",
+        "next_day": "Depression on top surface from volume shrinkage (ヒケ observed)"
+      },
+      "result": "Slight ヒケ observed — better than no cap but not perfect",
+      "DI_estimated": 0.25
+    },
+    "trial2": {
+      "name": "Trial 2 — RT Cool + Top-Surface Reheat",
+      "description": "Room-temperature cooling. 3 × hot-air reheat pulses (1 min each, 90°C) on top surface only.",
+      "fill_type": "Front-fill",
+      "T_fill_C": 82.0,
+      "T_top_ambient_C": [
+        25,
+        25,
+        90,
+        25,
+        90,
+        25,
+        90,
+        25,
+        25
+      ],
+      "T_bulk_C": [
+        82,
+        52,
+        44,
+        49,
+        44,
+        49.3,
+        44,
+        47.7,
+        41,
+        38
+      ],
+      "T_bulk_times_min": [
+        0,
+        4.5,
+        10,
+        11,
+        14.5,
+        15.5,
+        19,
+        20,
+        25,
+        30
+      ],
+      "reheat_events": [
+        {
+          "t_min": 10,
+          "t_end_min": 11,
+          "T_C": 90,
+          "method": "Hot air 1 min"
+        },
+        {
+          "t_min": 14.5,
+          "t_end_min": 15.5,
+          "T_C": 90,
+          "method": "Hot air 1 min"
+        },
+        {
+          "t_min": 19,
+          "t_end_min": 20,
+          "T_C": 90,
+          "method": "Hot air 1 min"
+        }
+      ],
+      "observations": {
+        "10min": "Partial solidification; initial central indentation forming",
+        "11min": "Surface re-melted (after reheat 1)",
+        "14.5min": "Partial solidification; central indentation again",
+        "15.5min": "Surface re-melted (after reheat 2)",
+        "19min": "Partial solidification; central indentation",
+        "20min": "Surface re-melted (after reheat 3)",
+        "25min": "Loss of fluidity",
+        "30min": "Fully solidified",
+        "next_day": "No internal voids. Depression on top surface (volume shrinkage). ヒケ still present."
+      },
+      "result": "ヒケ still present despite 3× reheat. Surface healed but re-solidified with indent.",
+      "DI_estimated": 0.3,
+      "key_insight": "Short (1 min) pulses at 90°C partially re-melt surface but indent re-forms during final solidification. Longer dwell or higher temperature needed."
+    },
+    "production": {
+      "name": "Production Line (Back-fill)",
+      "description": "Actual CBIC production with back-filling and cold air + 5× hot-air pulses (20 sec each).",
+      "fill_type": "Back-fill",
+      "T_fill_C": 74.9,
+      "surface_conditions": {
+        "ambient_C": 21,
+        "reheat_C": 100,
+        "cold_air_C": 16,
+        "cold_air_start_min": 21.3
+      },
+      "reheat_pulses": {
+        "count": 5,
+        "duration_sec": 20,
+        "T_C": 100,
+        "approximate_start_times_min": [
+          0.57,
+          1.47,
+          5.17,
+          7.23,
+          9.73
+        ]
+      },
+      "bulk_cooling_profile": {
+        "T_initial_C": 74.9,
+        "T_at_4min_C": 72.0,
+        "T_at_9min_C": 68.0,
+        "T_at_14min_C": 64.0,
+        "T_at_20min_C": 57.0,
+        "T_final_C": 43.8,
+        "total_time_min": 24.5
+      },
+      "result": "Acceptable product within 24.5 min. Minor ヒケ at top surface.",
+      "DI_estimated": 0.3,
+      "key_insight": "5 × 20 sec pulses at 100°C during mushy zone traversal (not after). Cold air (16°C) starts at t≈21.3 min for final solidification. Total 24.5 min — well within 30-min target."
+    }
+  },
+  "physics_rules": [
+    {
+      "rule": "Reheat must reach mushy zone (62–72°C) to be effective",
+      "evidence": "Trial 2: surface re-melts at 90°C → heals but re-forms ヒケ. Trial 1: slow cap cool avoids rapid quench.",
+      "action": "Use T_reheat ≥ 75°C for entry into mushy, ≥ 80°C for reliable healing."
+    },
+    {
+      "rule": "Total process time must be ≤ 30 min",
+      "evidence": "Client target. Production line achieves 24.5 min.",
+      "action": "Multi-zone step cooling reduces total time vs single RT cool (which takes 30+ min alone)."
+    },
+    {
+      "rule": "Biot number ≤ 0.5 ensures uniform radial cooling",
+      "evidence": "High Bi (> 0.5) causes large T_surface - T_core gradient → higher ヒケ risk.",
+      "action": "Keep h_cool ≤ 8 W/m²K for R=1.25 cm (Bi = h×R/k = 8×0.0125/0.25 = 0.4)."
+    },
+    {
+      "rule": "Mushy zone traversal speed is critical",
+      "evidence": "Production line spends ~10 min in mushy zone (62–72°C). Rapid quench increases DI.",
+      "action": "Design zones to slow the transition through 62–72°C. Target T_core ≈ T_surface in mushy."
+    },
+    {
+      "rule": "Short reheat pulses (< 1 min) are ineffective for healing",
+      "evidence": "Production uses 20 sec × 5 pulses. Trial 2 uses 1 min × 3 pulses — still ヒケ.",
+      "action": "Either: (a) many short pulses during mushy traverse, OR (b) longer sustained reheat (≥ 10 min at ≥ 80°C)."
+    },
+    {
+      "rule": "Cold air (16°C) should start only after bulk reaches below solidus (< 62°C)",
+      "evidence": "Production: cold air at t=21.3 min when T_bulk ≈ 55°C (below solidus).",
+      "action": "Premature cold air application increases DI significantly."
+    }
+  ],
+  "drl_targets": {
+    "DI_safe": 0.1,
+    "DI_caution": 0.25,
+    "DI_warning": 0.5,
+    "DI_critical": 0.8,
+    "total_time_target_min": 30,
+    "recommended_zones": 3,
+    "recommended_T_reheat_C": 80,
+    "recommended_T_reheat_range_C": [
+      75,
+      110
+    ],
+    "recommended_h_cool_Wm2K": 6,
+    "recommended_h_cool_range": [
+      3,
+      10
+    ],
+    "T_first_zone_C": 70,
+    "T_last_zone_C": 37,
+    "production_optimal": {
+      "T_fill_C": 74.9,
+      "zones": 3,
+      "T_zone1_C": 65,
+      "T_zone2_C": 50,
+      "T_zone3_C": 37,
+      "T_reheat_C": 80,
+      "t_reheat_min": 10,
+      "total_min": 30,
+      "DI_expected": 0.1
+    }
+  },
+  "physics_constants": {
+    "T_solidus_C": 62.0,
+    "T_liquidus_C": 72.0,
+    "T_mushy_mid_C": 67.0,
+    "k_thermal_WmK": 0.25,
+    "R_m": 0.0125,
+    "H_m": 0.04,
+    "DI_scale": {
+      "SAFE": [
+        0.0,
+        0.1
+      ],
+      "CAUTION": [
+        0.1,
+        0.25
+      ],
+      "WARNING": [
+        0.25,
+        0.5
+      ],
+      "CRITICAL": [
+        0.5,
+        0.8
+      ],
+      "FAILURE": [
+        0.8,
+        1.0
+      ]
+    }
+  },
+  "uploaded_temperature_range": {
+    "min_C": 16.0,
+    "max_C": 100.0,
+    "values": [
+      16.0,
+      21.0,
+      23.0,
+      25.0,
+      38.0,
+      41.0,
+      43.6,
+      43.7,
+      43.8,
+      43.9,
+      44.0,
+      44.1,
+      44.2,
+      44.3,
+      44.4,
+      44.5,
+      44.6,
+      44.7,
+      44.8,
+      44.9,
+      45.0,
+      45.1,
+      45.2,
+      45.3,
+      45.4,
+      45.5,
+      45.6,
+      45.7,
+      45.8,
+      45.9,
+      46.0,
+      46.1,
+      46.2,
+      46.3,
+      46.4,
+      46.5,
+      46.6,
+      46.7,
+      46.8,
+      46.9
+    ]
+  },
+  "uploaded_observations": [
+    "[Verification Example] 2026‑03‑17 data (reposted)",
+    "[Verification Example] Front‑filling container",
+    "[Verification Example] Trial 1 【Heat Retention Applied Only Near the Top Surface → Air Cooling at Room Temperature】 Reduced Temperature Gradient",
+    "[Verification Example] Sample No. ①\nWith molding cap: 59.0→23.0°C",
+    "[Verification Example] * The temperatures were checked at fixed time intervals, and the data points are connected by lines.",
+    "[Verification Example] Measurement Points",
+    "[Verification Example] Condition (Photos)",
+    "[Verification Example] Observations",
+    "[Verification Example] The bulk remains fluid and in a liquid state.",
+    "[Verification Example] Reheating with hot air, 1min",
+    "[Verification Example] Trial 2 【Air cooling at room temperature, followed by Reheating of the top surface only】",
+    "[Verification Example] ** The temperatures immediately before and after reheating were checked at specific points, and the data points are connected by lines.",
+    "[Verification Example] Immediately before Re-heat 1 (10 min)",
+    "[Verification Example] Immediately after Re-heat 1 (11 min)",
+    "[Verification Example] Partial solidification observed on the surface\n/Initial central indentation is observed.",
+    "[Production Example] Reference Data",
+    "[Production Example] Back‑filling container",
+    "[Production Example] Actual Production Line*【Cooling with cold air below room temperature while Reheating is applied】",
+    "[Production Example] *Actual production line: production using containers with different specifications (back filling)",
+    "[Production Example] Reheating with hot air, 20 sec",
+    "[Production Example:Cooling Conditions] Cooling Conditions",
+    "[検証例] 2026‑03‑17 データ (再掲)",
+    "[検証例] Trial 1 【天面付近のみ保温→室温で放冷】 温度勾配を緩やかにした場合",
+    "[検証例] * 一定時間での温度を確認し、データ要素を線で結んでいます",
+    "[検証例] バルク流動性あり、液状",
+    "[検証例] バルク流動性わずかにあり、一部ゲル状態",
+    "[検証例] ホットエアーにてリヒート, 1min",
+    "[検証例] Trial 2 【室温にて放冷し、天面のみリヒート】",
+    "[検証例] ** リヒート前後での温度をポイントで確認し、データ要素を線で結んでいます",
+    "[検証例] リヒート1直前\n (10 min)"
+  ]
+}
