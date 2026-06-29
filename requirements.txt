@@ -13,5 +13,6 @@ kaleido==0.2.1          # static PNG/SVG/PDF figure export (Linux-safe build)
 numpy>=1.24
 openpyxl>=3.1           # "Upload & Train from Excel" panel
 requests>=2.31          # Ollama REST client (rule-based fallback if no Ollama)
+groq>=0.11              # cloud LLM backend (free tier) — production advisor
 langchain-ollama>=0.2   # contextual chat memory (only active if an Ollama
 langchain-core>=0.3     #   endpoint is reachable; harmless otherwise)

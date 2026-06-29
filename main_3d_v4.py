@@ -163,7 +163,7 @@ TR = {
     # Advisor
     "advisor_title": "PI-DRL AI Advisor",
     "advisor_sub": ("Trained on CLIENT_Data_0427.xlsx · LCWT401 domain knowledge · "
-                    "RAG + LangChain memory · local Ollama with rule-based fallback"),
+                    "RAG-grounded · Groq / Ollama LLM with rule-based fallback"),
     # Publication export
     "export_title": "📐 Export figure for publication",
     "export_hint": "Publication-quality PNG / SVG / PDF / interactive HTML — for papers, posters & slides.",
@@ -212,7 +212,7 @@ TR = {
     "min_healing": "⚠️ 回復が不十分です。再加熱温度を80°C以上、または時間を12分以上に。",
     "advisor_title": "PI-DRL AIアドバイザー",
     "advisor_sub": ("CLIENT_Data_0427.xlsx で学習 · LCWT401 ドメイン知識 · "
-                    "RAG + LangChain メモリ · ローカル Ollama（ルールベース予備付き）"),
+                    "RAG 基盤 · Groq / Ollama LLM（ルールベース予備付き）"),
     "export_title": "📐 論文用に図をエクスポート",
     "export_hint": "論文・ポスター・スライド用の高品質 PNG / SVG / PDF / インタラクティブ HTML。",
     "export_format": "形式", "export_preset": "サイズプリセット",
@@ -1417,6 +1417,18 @@ def show_results(ts, params):
     )
 
 def main():
+    # ─── Cloud secrets → env (deployment) ──────────────────────────────────
+    # On Streamlit Community Cloud, set GROQ_API_KEY in the app's Secrets.
+    # We copy it into the environment BEFORE the advisor is constructed so the
+    # LLM advisor uses Groq in production (and Ollama locally when unset).
+    import os as _os
+    try:
+        for _k in ("GROQ_API_KEY", "GROQ_MODEL", "OLLAMA_URL"):
+            if _k in st.secrets and not _os.environ.get(_k):
+                _os.environ[_k] = str(st.secrets[_k])
+    except Exception:
+        pass
+
     # ─── CSS ─────────────────────────────────────────────────────────────────
     st.markdown("""<style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -2012,20 +2024,38 @@ def main():
                      "Copy it to the version4/ folder and restart the app.")
         else:
             st_info = advisor.status()
-            mode_col = "#10b981" if st_info["ollama_up"] else "#f59e0b"
-            mode_icon = "🟢" if st_info["ollama_up"] else "🟡"
-            model_name_show = st_info["mode"].replace("ollama:", "")
+            _groq   = st_info.get("groq")
+            _llm_up = _groq or st_info["ollama_up"]
+            if _groq:
+                mode_col, mode_icon = "#34d399", "🟢"
+                active_label   = "Groq Cloud LLM active"
+                model_name_show = st_info.get("groq_model", "groq")
+            elif st_info["ollama_up"]:
+                mode_col, mode_icon = "#10b981", "🟢"
+                active_label   = "Ollama LLM active"
+                model_name_show = st_info["mode"].replace("ollama:", "")
+            else:
+                mode_col, mode_icon = "#f59e0b", "🟡"
+                active_label   = "Rule-based mode (no LLM backend)"
+                model_name_show = "rule-based"
 
+            # Only nudge to start Ollama when there's NO backend at all
             _ollama_hint = (
                 '<div style="margin-left:auto"><span style="background:rgba(239,68,68,.1);'
                 'border:1px solid rgba(239,68,68,.2);color:#f87171;padding:4px 10px;'
-                'border-radius:6px;font-size:.7rem">Run: ollama run pidrl-advisor</span></div>'
-                if not st_info["ollama_up"] else ""
+                'border-radius:6px;font-size:.7rem">Set GROQ_API_KEY, or run: ollama run pidrl-advisor</span></div>'
+                if not _llm_up else ""
             )
 
-            # Model warm-up indicator (only relevant when Ollama is up)
+            # Backend badge
             _warm_badge = ""
-            if st_info["ollama_up"]:
+            if _groq:
+                _warm_badge = (
+                    '<span style="background:rgba(52,211,153,.1);border:1px solid '
+                    'rgba(52,211,153,.25);color:#34d399;padding:2px 8px;border-radius:5px;'
+                    'font-size:.66rem;margin-left:8px">⚡ Cloud — fast responses</span>'
+                )
+            elif st_info["ollama_up"]:
                 if st_info["model_warm"]:
                     _warm_badge = (
                         '<span style="background:rgba(16,185,129,.1);border:1px solid '
@@ -2048,10 +2078,10 @@ def main():
                 f'border-radius:12px;padding:12px 18px;margin-bottom:12px;'
                 f'display:flex;align-items:center;gap:14px;flex-wrap:wrap;'
                 f'box-shadow:0 6px 22px rgba(0,0,0,.3)">'
-                f'<span style="font-size:1.1rem;{"animation:pulseGlow 2s infinite;border-radius:50%" if st_info["ollama_up"] else ""}">{mode_icon}</span>'
+                f'<span style="font-size:1.1rem;{"animation:pulseGlow 2s infinite;border-radius:50%" if _llm_up else ""}">{mode_icon}</span>'
                 f'<div>'
                 f'<div style="font-size:.82rem;font-weight:700;color:{mode_col}">'
-                f'{"Ollama LLM active" if st_info["ollama_up"] else "Rule-based mode (Ollama offline)"}'
+                f'{active_label}'
                 f'{_warm_badge}'
                 f'</div>'
                 f'<div style="font-size:.72rem;color:#5f7aa3;margin-top:2px">'
@@ -2171,7 +2201,9 @@ def main():
                     del st.session_state[analysis_key]
 
                 if analysis_key not in st.session_state:
-                    if st_info["ollama_up"] and not st_info["model_warm"]:
+                    if _groq:
+                        spinner_msg = "⚡ Querying Groq LLM (RAG-accelerated)..."
+                    elif st_info["ollama_up"] and not st_info["model_warm"]:
                         spinner_msg = "🥶 Loading model (~30-90s, first time only)..."
                     elif st_info["ollama_up"]:
                         spinner_msg = "🤖 Querying LLM (RAG-accelerated, ~5-15s)..."
@@ -2185,11 +2217,13 @@ def main():
                 analysis_source = st.session_state.get(f"{analysis_key}_source", "unknown")
 
                 # Source badge
-                is_llm_source = analysis_source.startswith("ollama")
+                _is_groq_src  = analysis_source.startswith("groq")
+                is_llm_source = analysis_source.startswith("ollama") or _is_groq_src
                 src_col  = "#34d399" if is_llm_source else "#f59e0b"
-                src_icon = "🤖" if is_llm_source else "📊"
-                src_text = analysis_source.replace("ollama:", "LLM: ") if is_llm_source else \
-                           "Rule-based" + (" (Ollama timed out)" if "timeout" in analysis_source else "")
+                src_icon = ("⚡" if _is_groq_src else "🤖") if is_llm_source else "📊"
+                src_text = (analysis_source.replace("groq:", "Groq: ").replace("ollama:", "LLM: ")
+                            if is_llm_source else
+                            "Rule-based" + (" (timed out)" if "timeout" in analysis_source else ""))
                 st.markdown(
                     f'<div style="font-size:.7rem;color:{src_col};margin-bottom:6px">'
                     f'{src_icon} Source: {src_text}</div>', unsafe_allow_html=True)
@@ -2278,10 +2312,12 @@ def main():
                 # assistant
                 src_html = ""
                 if source_label:
-                    is_llm = source_label.startswith("ollama")
+                    _is_groq = source_label.startswith("groq")
+                    is_llm = source_label.startswith("ollama") or _is_groq
                     sc  = "#34d399" if is_llm else "#f59e0b"
                     bg  = "rgba(52,211,153,.1)" if is_llm else "rgba(245,158,11,.1)"
-                    txt = (source_label.replace("ollama:", "\U0001F916 ") if is_llm else (
+                    txt = ((source_label.replace("groq:", "⚡ ") if _is_groq
+                            else source_label.replace("ollama:", "\U0001F916 ")) if is_llm else (
                         "\U0001F4CA Rule-based" +
                         (" (timed out)" if "timeout" in source_label else
                          " (retrain needed)" if "retraining" in source_label else "")))
@@ -2394,7 +2430,9 @@ def main():
                 #    reads as a natural continuation once the page reruns.
                 st.markdown(_bubble_html("user", user_q.strip()), unsafe_allow_html=True)
 
-                if st_info.get("model_healthy") is False:
+                if _groq:
+                    info_msg = "\u26a1 Streaming response (Groq)..."
+                elif st_info.get("model_healthy") is False:
                     info_msg = "\U0001F4CA Model needs retraining \u2014 using rule-based answer..."
                 elif st_info["ollama_up"] and not st_info["model_warm"]:
                     info_msg = "\U0001F975 First query \u2014 loading model into memory (typically 30-90s)..."

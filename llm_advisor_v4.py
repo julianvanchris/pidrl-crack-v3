@@ -57,8 +57,15 @@ try:
 except ImportError:
     HAS_LANGCHAIN = False
 
+try:
+    from groq import Groq          # cloud LLM backend (free tier) for deployment
+    HAS_GROQ = True
+except ImportError:
+    HAS_GROQ = False
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 OLLAMA_URL    = os.environ.get("OLLAMA_URL",    "http://localhost:11434")
+GROQ_MODEL_DEFAULT = "llama-3.3-70b-versatile"   # strong free model on Groq
 MODEL_NAME    = os.environ.get("PIDRL_MODEL",   "pidrl-advisor")
 FALLBACK_MODEL= os.environ.get("PIDRL_FALLBACK","mistral")
 KB_PATH       = "knowledge_base_v4.json"
@@ -666,6 +673,55 @@ class LangChainChatEngine:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Groq cloud backend (free tier) — used in deployment
+# ═══════════════════════════════════════════════════════════════════════════
+
+class GroqEngine:
+    """
+    Cloud LLM backend on Groq's free tier (OpenAI-compatible, very fast).
+
+    Why this exists: the local `pidrl-advisor` (Mistral 7B via Ollama) can't
+    run on a free cloud host, so for the deployed site we generate with a
+    hosted model instead — keeping the SAME lean system prompt + RAG context,
+    so answers stay grounded in the client's experimental data. Activated only
+    when GROQ_API_KEY is set; locally (no key) the advisor keeps using Ollama.
+    """
+
+    def __init__(self, api_key: str, model: str = GROQ_MODEL_DEFAULT):
+        self.model  = model
+        self.client = Groq(api_key=api_key)
+
+    def stream(self, system: str, messages: list,
+               temperature: float = 0.3, max_tokens: int = 700):
+        """Yield response text chunks (OpenAI-compatible streaming)."""
+        resp = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": system}] + messages,
+            temperature=temperature, max_tokens=max_tokens, top_p=0.9,
+            stream=True,
+        )
+        for chunk in resp:
+            try:
+                delta = chunk.choices[0].delta.content
+            except Exception:
+                delta = None
+            if delta:
+                yield delta
+
+    def generate(self, system: str, prompt: str,
+                 temperature: float = 0.3, max_tokens: int = 700) -> str:
+        """Non-streaming completion → full text (or '' on empty)."""
+        resp = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": prompt}],
+            temperature=temperature, max_tokens=max_tokens, top_p=0.9,
+            stream=False,
+        )
+        return (resp.choices[0].message.content or "").strip()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Main Advisor class
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -730,6 +786,20 @@ class PILLMAdvisor:
         # Build rule-based fallback engine
         self.rule_engine = RuleBasedAdvisor(self.kb) if self.kb else None
 
+        # ── Cloud backend (Groq) — read fresh from env so Streamlit secrets
+        #    set just before construction are honoured. When a key is present
+        #    this becomes the PRIMARY backend (deployment); without it, the
+        #    advisor uses local Ollama exactly as before.
+        self.groq_key   = os.environ.get("GROQ_API_KEY", "").strip()
+        self.groq_model = os.environ.get("GROQ_MODEL", GROQ_MODEL_DEFAULT)
+        self.groq_engine = None
+        if HAS_GROQ and self.groq_key:
+            try:
+                self.groq_engine = GroqEngine(self.groq_key, self.groq_model)
+            except Exception as e:
+                print(f"[PILLMAdvisor] Groq init failed: {e}")
+                self.groq_engine = None
+
         # Detect mode
         self._mode = self._detect_mode()
 
@@ -778,7 +848,9 @@ class PILLMAdvisor:
         self._build_lc_engine()
 
         rag_status = f"ON ({len(self.vector_store)} chunks)" if self.rag_active else "OFF"
-        if not self._mode.startswith("ollama"):
+        if self._mode.startswith("groq"):
+            warm_status = f"cloud (Groq · {self.groq_model})"
+        elif not self._mode.startswith("ollama"):
             warm_status = "n/a (rule-based mode)"
         elif self.model_health.get("healthy") is False:
             warm_status = "⚠️ UNHEALTHY — retrain required"
@@ -831,6 +903,8 @@ class PILLMAdvisor:
         even if THIS advisor instance's own warm-up attempt failed/hasn't
         run yet.
         """
+        if self._mode.startswith("groq"):
+            return True   # cloud backend is always "ready" — no cold start
         with self._warm_lock:
             if self._is_warm:
                 return True
@@ -856,6 +930,10 @@ class PILLMAdvisor:
         return {}
 
     def _detect_mode(self) -> str:
+        # Cloud backend wins when configured (deployment); avoids probing
+        # localhost Ollama on a cloud host where it doesn't exist.
+        if getattr(self, "groq_engine", None) is not None:
+            return f"groq:{self.groq_model}"
         if not self.client.is_alive():
             return "rule-based"
         models = self.client.list_models()
@@ -892,7 +970,7 @@ class PILLMAdvisor:
 
     @property
     def is_llm_active(self) -> bool:
-        return self._mode.startswith("ollama")
+        return self._mode.startswith("ollama") or self._mode.startswith("groq")
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -1024,7 +1102,27 @@ class PILLMAdvisor:
         full_response = ""
         lc_handled    = False   # did the LangChain engine already store this turn?
 
-        if self._mode.startswith("ollama") and self.model_health.get("healthy") is not False:
+        # ── PRIMARY (deployment): Groq cloud backend, streaming ───────────
+        if self.groq_engine is not None:
+            sys_prompt = self.lean_system_prompt if self.rag_active else (
+                self.system_prompt or self.lean_system_prompt)
+            messages = self._history[-6:] + [{"role": "user", "content": full_prompt}]
+            self._last_was_cold_start = False
+            try:
+                for chunk in self.groq_engine.stream(sys_prompt, messages, max_tokens=700):
+                    full_response += chunk
+                    yield chunk
+            except Exception as e:
+                print(f"[!] Groq stream error: {e} — using rule-based fallback")
+                full_response = ""
+            if full_response.strip():
+                self._last_source = f"groq:{self.groq_model}"
+            else:
+                self._last_source = "rule-based (Groq error)"
+                full_response = self._fallback(sim_results, user_message)
+                yield full_response
+
+        elif self._mode.startswith("ollama") and self.model_health.get("healthy") is not False:
             mode_parts   = self._mode.split(":")
             model_to_use = mode_parts[1].split("+")[0] if len(mode_parts) > 1 else self.model
             sys_prompt   = self.lean_system_prompt if self.rag_active else (
@@ -1181,10 +1279,15 @@ class PILLMAdvisor:
               f"Warm: {self.is_warm} | Health: {self.model_health.get('healthy')}")
 
     def status(self) -> dict:
-        alive = self.client.is_alive()
+        # In Groq (cloud) mode don't probe localhost Ollama — it isn't there
+        # and the 3s timeout would slow every rerun.
+        groq_on = self.groq_engine is not None
+        alive   = False if groq_on else self.client.is_alive()
         return {
             "mode":          self._mode,
             "ollama_up":     alive,
+            "groq":          groq_on,
+            "groq_model":    self.groq_model if groq_on else "",
             "models":        self.client.list_models() if alive else [],
             "kb_loaded":     bool(self.kb),
             "rag_active":    self.rag_active,
@@ -1221,6 +1324,20 @@ class PILLMAdvisor:
         rule engine on total failure, so the user always gets a useful
         answer even if Ollama is completely unresponsive.
         """
+        # ── PRIMARY (deployment): Groq cloud backend ──────────────────────
+        if self.groq_engine is not None:
+            sys_prompt = self.lean_system_prompt if self.rag_active else (
+                self.system_prompt or self.lean_system_prompt)
+            try:
+                result = self.groq_engine.generate(sys_prompt, prompt, max_tokens=700)
+                if result:
+                    self._last_source = f"groq:{self.groq_model}"
+                    return result
+            except Exception as e:
+                print(f"[!] Groq error: {e} — falling back to rule engine")
+            self._last_source = "rule-based (Groq error)"
+            return self._fallback(fallback_sim, fallback_question)
+
         if not self._mode.startswith("ollama"):
             self._last_source = "rule-based (Ollama offline)"
             return self._fallback(fallback_sim, fallback_question)
