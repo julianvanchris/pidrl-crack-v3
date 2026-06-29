@@ -1416,18 +1416,50 @@ def show_results(ts, params):
         unsafe_allow_html=True,
     )
 
-def main():
-    # ─── Cloud secrets → env (deployment) ──────────────────────────────────
-    # On Streamlit Community Cloud, set GROQ_API_KEY in the app's Secrets.
-    # We copy it into the environment BEFORE the advisor is constructed so the
-    # LLM advisor uses Groq in production (and Ollama locally when unset).
-    import os as _os
+def _hydrate_env_from_secrets():
+    """Copy GROQ_API_KEY / GROQ_MODEL / OLLAMA_URL from st.secrets into the
+    environment BEFORE the advisor is built (Streamlit Cloud only loads
+    secrets into st.secrets, not os.environ). Tolerant of the common
+    formatting mistakes: any letter case, and a `[groq]` section."""
+    import os
     try:
-        for _k in ("GROQ_API_KEY", "GROQ_MODEL", "OLLAMA_URL"):
-            if _k in st.secrets and not _os.environ.get(_k):
-                _os.environ[_k] = str(st.secrets[_k])
+        sec = st.secrets
+    except Exception:
+        return {}
+    seen = {}
+    def _set(k, v):
+        v = str(v).strip()
+        if v:
+            os.environ[k] = v
+    # Top-level keys, case-insensitive (handles groq_api_key, Groq_Api_Key, …)
+    try:
+        for key in list(sec.keys()):
+            ku = str(key).upper()
+            seen[str(key)] = True
+            if ku in ("GROQ_API_KEY", "GROQ_MODEL", "OLLAMA_URL"):
+                _set(ku, sec[key])
     except Exception:
         pass
+    # Optional [groq] section: api_key = "...", model = "..."
+    try:
+        if "groq" in sec:
+            g = sec["groq"]
+            if g.get("api_key"): _set("GROQ_API_KEY", g["api_key"])
+            if g.get("model"):   _set("GROQ_MODEL", g["model"])
+    except Exception:
+        pass
+    return seen
+
+
+def main():
+    # ─── Cloud secrets → env (deployment) ──────────────────────────────────
+    _secret_keys_seen = _hydrate_env_from_secrets()
+    # Developer/diagnostic mode: append ?debug=1 to the URL. Hides all
+    # setup/LLM/training panels from clients while keeping them for us.
+    try:
+        _admin = str(st.query_params.get("debug", "")) == "1"
+    except Exception:
+        _admin = False
 
     # ─── CSS ─────────────────────────────────────────────────────────────────
     st.markdown("""<style>
@@ -2072,39 +2104,47 @@ def main():
             _lc_badge = (
                 '<b style="color:#a78bfa">\U0001F9E0 LangChain</b> &nbsp;·&nbsp;'
                 if st_info.get("langchain") else "")
-            st.markdown(
-                f'<div style="background:linear-gradient(135deg,rgba(11,32,64,.55),'
-                f'rgba(7,17,30,.8));border:1px solid #13294a;'
-                f'border-radius:12px;padding:12px 18px;margin-bottom:12px;'
-                f'display:flex;align-items:center;gap:14px;flex-wrap:wrap;'
-                f'box-shadow:0 6px 22px rgba(0,0,0,.3)">'
-                f'<span style="font-size:1.1rem;{"animation:pulseGlow 2s infinite;border-radius:50%" if _llm_up else ""}">{mode_icon}</span>'
-                f'<div>'
-                f'<div style="font-size:.82rem;font-weight:700;color:{mode_col}">'
-                f'{active_label}'
-                f'{_warm_badge}'
-                f'</div>'
-                f'<div style="font-size:.72rem;color:#5f7aa3;margin-top:2px">'
-                f'Model: <b style="color:#9fb4d4">{model_name_show}</b> &nbsp;·&nbsp;'
-                f'KB: <b style="color:#9fb4d4">{"✅" if st_info["kb_loaded"] else "❌"}</b> &nbsp;·&nbsp;'
-                f'RAG: <b style="color:{"#34d399" if st_info["rag_active"] else "#5a7199"}">'
-                f'{("✅ "+str(st_info["rag_chunks"])+" chunks") if st_info["rag_active"] else "off"}</b> &nbsp;·&nbsp;'
-                f'{_lc_badge}'
-                f'Cache: {st_info["cache_size"]}'
-                f'</div></div>'
-                f'{_ollama_hint}'
-                f'</div>', unsafe_allow_html=True)
+            if _admin:
+                # Full technical status bar — developers only (?debug=1)
+                st.markdown(
+                    f'<div style="background:linear-gradient(135deg,rgba(11,32,64,.55),'
+                    f'rgba(7,17,30,.8));border:1px solid #13294a;'
+                    f'border-radius:12px;padding:12px 18px;margin-bottom:12px;'
+                    f'display:flex;align-items:center;gap:14px;flex-wrap:wrap;'
+                    f'box-shadow:0 6px 22px rgba(0,0,0,.3)">'
+                    f'<span style="font-size:1.1rem;{"animation:pulseGlow 2s infinite;border-radius:50%" if _llm_up else ""}">{mode_icon}</span>'
+                    f'<div>'
+                    f'<div style="font-size:.82rem;font-weight:700;color:{mode_col}">'
+                    f'{active_label}{_warm_badge}</div>'
+                    f'<div style="font-size:.72rem;color:#5f7aa3;margin-top:2px">'
+                    f'Model: <b style="color:#9fb4d4">{model_name_show}</b> &nbsp;·&nbsp;'
+                    f'KB: <b style="color:#9fb4d4">{"✅" if st_info["kb_loaded"] else "❌"}</b> &nbsp;·&nbsp;'
+                    f'RAG: <b style="color:{"#34d399" if st_info["rag_active"] else "#5a7199"}">'
+                    f'{("✅ "+str(st_info["rag_chunks"])+" chunks") if st_info["rag_active"] else "off"}</b> &nbsp;·&nbsp;'
+                    f'{_lc_badge}Cache: {st_info["cache_size"]}'
+                    f'</div></div>{_ollama_hint}</div>', unsafe_allow_html=True)
+            else:
+                # Clean, client-facing status pill — no technical jargon.
+                _online = bool(_llm_up)
+                _c = "#34d399" if _online else "#5f7aa3"
+                _txt = "AI Advisor — online" if _online else "AI Advisor — ready"
+                st.markdown(
+                    f'<div style="display:inline-flex;align-items:center;gap:9px;'
+                    f'background:rgba(52,211,153,.08);border:1px solid {_c}44;'
+                    f'border-radius:30px;padding:6px 16px;margin-bottom:12px">'
+                    f'<span style="width:9px;height:9px;border-radius:50%;background:{_c};'
+                    f'{"animation:pulseGlow 2s infinite" if _online else ""};flex-shrink:0"></span>'
+                    f'<span style="font-size:.78rem;font-weight:700;color:{_c}">{_txt}</span>'
+                    f'<span style="font-size:.68rem;color:#5f7aa3">· grounded in your experimental data</span>'
+                    f'</div>', unsafe_allow_html=True)
 
-            if st_info["ollama_up"] and not st_info["model_warm"] and st_info.get("model_healthy") is not False:
+            if _admin and st_info["ollama_up"] and not st_info["model_warm"] and st_info.get("model_healthy") is not False:
                 st.caption("⏳ Model is loading into memory in the background "
                           "(happens once — subsequent queries respond in seconds). "
                           "You can keep using the dashboard while it loads.")
 
-            # ── Backend diagnostics (esp. for the deployed site) ───────────
-            # When no LLM backend is active, or Groq is configured, show
-            # exactly WHY so cloud setup issues are visible instead of a
-            # silent rule-based fallback.
-            if _groq:
+            # ── Backend diagnostics — developers only (?debug=1) ───────────
+            if _admin and _groq:
                 # Live connectivity check, run once per session (cached).
                 if "groq_ping" not in st.session_state:
                     with st.spinner("Checking Groq connection…"):
@@ -2120,23 +2160,21 @@ def main():
                         "`GROQ_MODEL` secret (e.g. `llama-3.1-8b-instant`).")
                     if st.button("🔄 Recheck Groq", key="groq_recheck"):
                         st.session_state.pop("groq_ping", None); st.rerun()
-            elif not st_info["ollama_up"]:
+            elif _admin and not st_info["ollama_up"]:
                 # Deployed with no LLM backend at all → rule-based only.
                 _pkg = "✅" if st_info.get("has_groq_pkg") else "❌ not installed"
                 _key = "✅ set" if st_info.get("groq_key_set") else "❌ not set"
+                _seen = ", ".join(sorted(_secret_keys_seen.keys())) or "(none)"
                 st.warning(
                     "🤖 **The advisor is running in rule-based mode (no live LLM).** "
                     "To turn on the free Groq LLM on this deployed site: open "
                     "**⋮ → Settings → Secrets** and add `GROQ_API_KEY = \"gsk_…\"` "
                     "(get a free key at console.groq.com), then the app reboots automatically.\n\n"
-                    f"Diagnostics — groq package: {_pkg} · GROQ_API_KEY: {_key}")
+                    f"Diagnostics — groq package: {_pkg} · GROQ_API_KEY: {_key} · "
+                    f"secret keys Streamlit sees: `{_seen}`")
 
-            # ── Model health banner — auto-detected broken template ────────
-            # Catches the case where main_3d_v4.py/llm_advisor_v4.py were
-            # updated with the template fix, but the OLLAMA MODEL itself
-            # was never recreated (updating .py files doesn't retroactively
-            # fix an already-registered Ollama model).
-            if st_info.get("model_healthy") is False:
+            # ── Model health banner — developers only (Ollama-specific) ────
+            if _admin and st_info.get("model_healthy") is False:
                 st.markdown(
                     '<div style="background:rgba(239,68,68,.08);border:2px solid rgba(239,68,68,.35);'
                     'border-radius:10px;padding:14px 18px;margin-bottom:12px">'
@@ -2499,6 +2537,11 @@ def main():
                                    unsafe_allow_html=True)
                 typing_ph.empty()
                 st.rerun()   # re-render so this exchange joins the persistent thread above
+
+            # ── Developer-only panels below (data upload / Ollama training /
+            #    setup help). Hidden from clients; visible with ?debug=1.
+            if not _admin:
+                return
 
             # ── Data Upload & Training Panel ──────────────────────────────
             st.markdown("<div style='margin-top:18px'></div>", unsafe_allow_html=True)
