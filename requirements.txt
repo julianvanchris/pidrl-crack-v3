@@ -1,0 +1,17 @@
+# ─────────────────────────────────────────────────────────────────────────
+# DEPLOYMENT requirements — Streamlit Community Cloud runtime for main_3d_v4.py
+#
+# This is the LEAN runtime stack. The heavy training stack (torch, scipy,
+# matplotlib, pandas) lives in requirements_v4.txt and is NOT needed to run
+# the web app — main_3d_v4.py only imports numpy / plotly / streamlit, plus
+# the advisor + export helpers below. Excluding torch keeps the cloud build
+# small and fast.
+# ─────────────────────────────────────────────────────────────────────────
+streamlit>=1.40
+plotly>=5.18,<6
+kaleido==0.2.1          # static PNG/SVG/PDF figure export (Linux-safe build)
+numpy>=1.24
+openpyxl>=3.1           # "Upload & Train from Excel" panel
+requests>=2.31          # Ollama REST client (rule-based fallback if no Ollama)
+langchain-ollama>=0.2   # contextual chat memory (only active if an Ollama
+langchain-core>=0.3     #   endpoint is reachable; harmless otherwise)
