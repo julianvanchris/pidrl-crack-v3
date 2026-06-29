@@ -1258,6 +1258,36 @@ class PILLMAdvisor:
             return "🚨 Severe ヒケ — redesign zone schedule + strong reheat"
         return "🛑 Critical failure — halt production"
 
+    def suggest_followups(self, question: str, answer: str, n: int = 3) -> list:
+        """Generate short, contextual follow-up questions from the last
+        exchange (cheap LLM call). Falls back to generic ones if no LLM."""
+        static = ["How do I get DI below 0.10?",
+                  "What T_reheat gives the best healing?",
+                  "How does the Biot number change this?"]
+        sys = ("You generate concise, relevant follow-up questions for a "
+               "deodorant-stick solidification process engineer. Output the "
+               "questions ONLY — one per line, no numbering, each under 9 words.")
+        prompt = (f"Suggest {n} natural follow-up questions to continue this chat.\n\n"
+                  f"Q: {question}\nA: {answer[:700]}")
+        txt = ""
+        try:
+            if self.groq_engine is not None:
+                txt = self.groq_engine.generate(sys, prompt, max_tokens=120, temperature=0.5)
+            elif self._mode.startswith("ollama") and self.model_health.get("healthy") is not False:
+                model = self._mode.split(":")[1].split("+")[0]
+                txt = self.client.generate(model, prompt, system=sys,
+                                           max_tokens=120, timeout=30) or ""
+        except Exception as e:
+            print(f"[!] follow-up generation failed: {e}")
+            txt = ""
+        qs = []
+        for line in txt.splitlines():
+            q = line.strip().lstrip("-•*0123456789.) ").strip().strip('"“”\'')
+            if len(q) >= 6:
+                qs.append(q if q.endswith("?") else q + "?")
+        qs = qs[:n]
+        return qs or static
+
     def groq_ping(self):
         """Live connectivity/credential check for the Groq backend.
         Returns (ok: bool, detail: str) — used by the UI to show exactly

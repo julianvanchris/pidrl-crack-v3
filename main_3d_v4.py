@@ -103,9 +103,15 @@ def _md_to_html(content, bullet_color="#60a5fa"):
             buf.clear()
     for ln in safe.split("\n"):
         s = ln.strip()
+        mh = re.match(r"^(#{1,6})\s+(.*)", s)         # markdown heading ## Foo
         mb = re.match(r"^[-•*]\s+(.*)", s)
         mn = re.match(r"^(\d+)[.)]\s+(.*)", s)
-        if mb:
+        if mh:
+            _flush()
+            out.append('<div style="font-weight:800;color:#dde8ff;letter-spacing:.02em;'
+                       'margin:9px 0 3px;font-size:.92em">'
+                       f'{mh.group(2).rstrip(": ")}</div>')
+        elif mb:
             _flush()
             out.append('<div style="display:flex;gap:8px;margin:3px 0 3px 2px">'
                        f'<span style="color:{bullet_color};flex-shrink:0">•</span>'
@@ -1600,6 +1606,7 @@ def main():
     @keyframes pulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(52,211,153,.5)}50%{box-shadow:0 0 0 7px rgba(52,211,153,0)}}
     @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
     @keyframes floatIn{from{opacity:0;transform:translateY(10px) scale(.99)}to{opacity:1;transform:none}}
+    @keyframes typingBounce{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-6px);opacity:1}}
     </style>""", unsafe_allow_html=True)
 
     # ─── SESSION INIT ─────────────────────────────────────────────────────────
@@ -2313,18 +2320,23 @@ def main():
                     line = raw.strip()
                     if not line:
                         continue
-                    # Match an optionally-bold section label like "**ROOT CAUSE:**"
-                    # or plain "ROOT CAUSE:" (rule-based output) — tolerant of the
-                    # markdown the LLM emits so we never show literal asterisks.
-                    m   = re.match(r"^\**\s*([A-Za-z][A-Za-z ]+?)\s*:\**\s*(.*)$", line)
-                    sec = m.group(1).strip().upper() if m else None
-                    if sec in sections:
+                    # Identify a section label regardless of how the LLM marked
+                    # it: "## ASSESSMENT", "**ASSESSMENT:**", "ASSESSMENT:" …
+                    # Strip leading #/* and trailing :/*/# before matching.
+                    clean   = re.sub(r"^[#*\s]+", "", line).rstrip(":*# ").strip()
+                    clean_u = clean.upper()
+                    sec, body = None, ""
+                    for _s in sections:
+                        if clean_u == _s or clean_u.startswith(_s + ":") or clean_u.startswith(_s + " "):
+                            sec  = _s
+                            body = clean[len(_s):].lstrip(":  ").strip()
+                            break
+                    if sec is not None:
                         col = sections[sec]
                         html_parts.append(
                             f'<div style="margin:12px 0 4px;font-size:.7rem;font-weight:700;'
                             f'color:{col};letter-spacing:.1em;text-transform:uppercase">'
                             f'▸ {sec}</div>')
-                        body = m.group(2).strip()
                         if body:
                             html_parts.append(
                                 f'<div style="color:#c8d6ea">{_md_to_html(body, col)}</div>')
@@ -2414,6 +2426,29 @@ def main():
                     f'{src_html}</div></div>'
                 )
 
+            def _thinking_bubble(label):
+                """Animated 'advisor is thinking' bubble (bouncing dots)."""
+                dots = "".join(
+                    f'<span style="width:7px;height:7px;border-radius:50%;'
+                    f'background:#84a9ff;display:inline-block;'
+                    f'animation:typingBounce 1.2s infinite {d}s"></span>'
+                    for d in (0.0, 0.15, 0.30))
+                return (
+                    '<div style="display:flex;gap:10px;margin:14px 0;animation:fadeIn .2s ease">'
+                    '<div style="width:34px;height:34px;border-radius:50%;flex-shrink:0;'
+                    'background:linear-gradient(135deg,#f97316,#dc2626);display:flex;'
+                    'align-items:center;justify-content:center;font-size:16px;'
+                    'box-shadow:0 3px 12px rgba(234,88,12,.4)">\U0001F916</div>'
+                    '<div><div style="font-size:.64rem;color:#5a7199;font-weight:700;'
+                    'letter-spacing:.08em;text-transform:uppercase;margin:0 0 3px 3px">'
+                    'PI-DRL Advisor</div>'
+                    '<div style="background:linear-gradient(135deg,#0f1d38,#0a1424);'
+                    'border:1px solid #1e3358;border-radius:5px 18px 18px 18px;'
+                    'padding:14px 18px;display:inline-flex;align-items:center;gap:7px">'
+                    f'{dots}</div>'
+                    f'<div style="font-size:.62rem;color:#5a7199;margin:5px 0 0 4px">{label}</div>'
+                    '</div></div>')
+
             # ── Render existing chat thread (scrollable container) ──────────
             history_pairs = []
             hist = advisor._history
@@ -2443,19 +2478,34 @@ def main():
                     'Biot number, DI thresholds.<br>The advisor remembers the conversation.'
                     '</div>', unsafe_allow_html=True)
 
-            # Quick question buttons
-            q_cols = st.columns(4)
-            quick_qs = [
-                "Why is \u30d2\u30b1 forming at the top surface?",
-                "What T_reheat do I need for DI < 0.10?",
-                "How does Biot number affect \u30d2\u30b1?",
-                "Compare my result to production line data",
-            ]
-            for i, (col, qq) in enumerate(zip(q_cols, quick_qs)):
-                if col.button(qq[:28]+"\u2026" if len(qq)>28 else qq,
-                              key=f"quick_q_{i}",
-                              width='stretch'):
-                    st.session_state["llm_chatbox"] = qq
+            # \u2500\u2500 Suggested questions \u2014 clicking SENDS immediately (sets
+            #    pending_q). Before any chat: starter presets. After a chat:
+            #    contextual follow-ups generated from the last answer. \u2500\u2500
+            if history_pairs:
+                _lu = history_pairs[-1][0]["content"]
+                _la = history_pairs[-1][1]["content"] if history_pairs[-1][1] else ""
+                _fk = f"fups_{len(hist)}"
+                if _fk not in st.session_state:
+                    with st.spinner(""):
+                        st.session_state[_fk] = advisor.suggest_followups(_lu, _la)
+                suggestions = st.session_state[_fk]
+                _fl = ("\u7d9a\u3051\u3066\u8cea\u554f" if st.session_state.get("lang")=="ja"
+                       else "Follow-up questions")
+                st.markdown(f"<div style='font-size:.66rem;color:#5f7aa3;font-weight:700;"
+                            f"letter-spacing:.06em;margin:2px 0 5px'>\U0001F4A1 {_fl}</div>",
+                            unsafe_allow_html=True)
+            else:
+                suggestions = [
+                    "Why is \u30d2\u30b1 forming at the top surface?",
+                    "What T_reheat do I need for DI < 0.10?",
+                    "How does Biot number affect \u30d2\u30b1?",
+                    "Compare my result to production line data",
+                ]
+            s_cols = st.columns(len(suggestions) if suggestions else 1)
+            for i, (col, sq) in enumerate(zip(s_cols, suggestions)):
+                if col.button(sq[:34]+"\u2026" if len(sq)>34 else sq,
+                              key=f"suggest_{len(hist)}_{i}", width='stretch'):
+                    st.session_state["pending_q"] = sq
                     st.rerun()
 
             # Bind the box to its OWN session-state key (not a transient
@@ -2473,7 +2523,7 @@ def main():
                                               width='stretch',
                                               help=t("send"))
 
-            lc_on   = st_info.get("langchain")
+            lc_on   = st_info.get("langchain") or _groq
             mem_txt = t("mem_on") if lc_on else t("mem_basic")
             mc1, mc2 = st.columns([3, 1])
             mc1.markdown(
@@ -2486,10 +2536,17 @@ def main():
                 # widget key (llm_chatbox), which is already instantiated this
                 # run and would raise if modified/deleted.
                 for k in list(st.session_state.keys()):
-                    if k.startswith("llm_analysis_"): del st.session_state[k]
+                    if k.startswith(("llm_analysis_", "fups_")): del st.session_state[k]
+                st.session_state.pop("pending_q", None)
                 st.rerun()
 
-            if sent and user_q.strip():
+            ask_q = ""
+            if st.session_state.get("pending_q"):
+                ask_q = st.session_state.pop("pending_q")
+            elif sent and user_q.strip():
+                ask_q = user_q.strip()
+
+            if ask_q:
                 ctx_str = st.session_state.get(
                     f"llm_analysis_{id(ats) if ats else 0}_{DI_live:.4f}", "")
                 sim_c = sim_ctx if ats else None
@@ -2497,37 +2554,34 @@ def main():
                 # ── Live exchange — shown as bubbles directly below the
                 #    composer, identical styling to the thread above, so it
                 #    reads as a natural continuation once the page reruns.
-                st.markdown(_bubble_html("user", user_q.strip()), unsafe_allow_html=True)
+                st.markdown(_bubble_html("user", ask_q), unsafe_allow_html=True)
 
                 if _groq:
-                    info_msg = "\u26a1 Streaming response (Groq)..."
-                elif st_info.get("model_healthy") is False:
-                    info_msg = "\U0001F4CA Model needs retraining \u2014 using rule-based answer..."
+                    think_lbl = "Thinking with Groq\u2026"
                 elif st_info["ollama_up"] and not st_info["model_warm"]:
-                    info_msg = "\U0001F975 First query \u2014 loading model into memory (typically 30-90s)..."
+                    think_lbl = "Loading model (first query, 30-90s)\u2026"
                 elif st_info["ollama_up"]:
-                    info_msg = "\U0001F916 Streaming response..."
+                    think_lbl = "Thinking\u2026"
                 else:
-                    info_msg = "\U0001F4CA Computing rule-based answer..."
+                    think_lbl = "Computing\u2026"
 
                 typing_ph = st.empty()
-                typing_ph.markdown(
-                    f'<div style="display:flex;align-items:center;gap:8px;margin:6px 0;'
-                    f'padding-left:38px;font-size:.72rem;color:#5a7199">{info_msg}</div>',
-                    unsafe_allow_html=True)
+                typing_ph.markdown(_thinking_bubble(think_lbl), unsafe_allow_html=True)
 
                 bubble_ph = st.empty()
                 accumulated = ""
                 last_render = 0.0
                 chunk_count = 0
 
-                for chunk in advisor.chat_stream(user_q.strip(),
+                for chunk in advisor.chat_stream(ask_q,
                                                  context=ctx_str[:600],
                                                  sim_results=sim_c):
                     accumulated += chunk
                     chunk_count += 1
+                    if chunk_count == 1:
+                        typing_ph.empty()      # first token → drop the thinking dots
                     now = time.time()
-                    if now - last_render > 0.12 or chunk_count <= 3:
+                    if now - last_render > 0.10 or chunk_count <= 3:
                         bubble_ph.markdown(_bubble_html("assistant", accumulated, cursor=True),
                                            unsafe_allow_html=True)
                         last_render = now
