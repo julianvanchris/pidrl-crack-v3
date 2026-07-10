@@ -2047,15 +2047,33 @@ def main():
         if "advisor_version" not in st.session_state:
             st.session_state.advisor_version = 0
 
+        # Deploy-safety: @st.cache_resource persists the advisor INSTANCE across
+        # reruns, and Streamlit re-execs this entry script fresh but does NOT
+        # re-import already-loaded modules. So after a git deploy without a full
+        # process restart, a stale advisor (old llm_advisor_v4 in sys.modules)
+        # would linger — causing "chat_stream() got an unexpected kwarg" when
+        # new main calls it with new params. Fix: key the cache on the advisor
+        # file's mtime AND importlib.reload the module, so any deploy rebuilds a
+        # fresh instance from current code automatically.
+        try:
+            import os as _os
+            _adv_mtime = _os.path.getmtime(
+                _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                              "llm_advisor_v4.py"))
+        except Exception:
+            _adv_mtime = 0.0
+
         @st.cache_resource(show_spinner=False)
-        def _load_advisor(_version: int):
+        def _load_advisor(_version: int, _mtime: float):
             try:
-                from llm_advisor_v4 import PILLMAdvisor
-                return PILLMAdvisor()
+                import importlib
+                import llm_advisor_v4
+                importlib.reload(llm_advisor_v4)   # pick up code from this deploy
+                return llm_advisor_v4.PILLMAdvisor()
             except ImportError:
                 return None
 
-        advisor = _load_advisor(st.session_state.advisor_version)
+        advisor = _load_advisor(st.session_state.advisor_version, _adv_mtime)
 
         # ── Per-session conversation state ─────────────────────────────────
         # CRITICAL: the advisor above is @st.cache_resource — a SINGLE object
