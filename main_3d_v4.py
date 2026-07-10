@@ -2057,6 +2057,19 @@ def main():
 
         advisor = _load_advisor(st.session_state.advisor_version)
 
+        # ── Per-session conversation state ─────────────────────────────────
+        # CRITICAL: the advisor above is @st.cache_resource — a SINGLE object
+        # shared by every visitor/session on the server. Storing chat history
+        # on it would leak one user's conversation to everyone (the "PC2 sees
+        # PC1's chat" bug). So each browser session keeps its OWN history list
+        # and id here in st.session_state, which is per-session and starts
+        # empty whenever the site is opened afresh.
+        if "chat_sid" not in st.session_state:
+            import uuid
+            st.session_state.chat_sid = uuid.uuid4().hex
+        if "chat_hist" not in st.session_state:
+            st.session_state.chat_hist = []
+
         # ── Status bar ─────────────────────────────────────────────────────
         if advisor is None:
             st.error("⚠️ llm_advisor_v4.py not found. "
@@ -2450,8 +2463,10 @@ def main():
                     '</div></div>')
 
             # ── Render existing chat thread (scrollable container) ──────────
+            #    Source of truth is the PER-SESSION list (not the shared
+            #    advisor), so each visitor only ever sees their own thread.
             history_pairs = []
-            hist = advisor._history
+            hist = st.session_state.chat_hist
             for i in range(0, len(hist) - (len(hist) % 2), 2):
                 history_pairs.append((hist[i], hist[i+1] if i+1 < len(hist) else None))
 
@@ -2468,14 +2483,19 @@ def main():
                 thread_html.append('</div>')
                 st.markdown("".join(thread_html), unsafe_allow_html=True)
             else:
+                _empty_txt = (
+                    "シミュレーションについて何でも質問してください — ヒケの原因、再加熱の戦略、"
+                    "ビオ数、DIのしきい値など。<br>アドバイザーは会話を記憶します。"
+                    if st.session_state.get("lang") == "ja" else
+                    "Ask anything about your simulation — ヒケ causes, reheat strategy, "
+                    "Biot number, DI thresholds.<br>The advisor remembers the conversation.")
                 st.markdown(
                     '<div style="text-align:center;padding:30px 24px;color:#46618c;'
                     'font-size:.8rem;background:radial-gradient(600px 200px at 50% 0%,'
                     'rgba(37,99,235,.06),transparent),rgba(3,9,26,.6);'
                     'border:1px solid #13294a;border-radius:14px;margin-bottom:10px">'
                     '<div style="font-size:1.6rem;margin-bottom:6px">\U0001F4AC</div>'
-                    'Ask anything about your simulation — ヒケ causes, reheat strategy, '
-                    'Biot number, DI thresholds.<br>The advisor remembers the conversation.'
+                    f'{_empty_txt}'
                     '</div>', unsafe_allow_html=True)
 
             # \u2500\u2500 Suggested questions \u2014 clicking SENDS immediately (sets
@@ -2484,16 +2504,24 @@ def main():
             if history_pairs:
                 _lu = history_pairs[-1][0]["content"]
                 _la = history_pairs[-1][1]["content"] if history_pairs[-1][1] else ""
-                _fk = f"fups_{len(hist)}"
+                _fk = f"fups_{len(hist)}_{st.session_state.get('lang','en')}"
                 if _fk not in st.session_state:
                     with st.spinner(""):
-                        st.session_state[_fk] = advisor.suggest_followups(_lu, _la)
+                        st.session_state[_fk] = advisor.suggest_followups(
+                            _lu, _la, lang=st.session_state.get("lang", "en"))
                 suggestions = st.session_state[_fk]
                 _fl = ("\u7d9a\u3051\u3066\u8cea\u554f" if st.session_state.get("lang")=="ja"
                        else "Follow-up questions")
                 st.markdown(f"<div style='font-size:.66rem;color:#5f7aa3;font-weight:700;"
                             f"letter-spacing:.06em;margin:2px 0 5px'>\U0001F4A1 {_fl}</div>",
                             unsafe_allow_html=True)
+            elif st.session_state.get("lang") == "ja":
+                suggestions = [
+                    "\u306a\u305c\u4e0a\u9762\u3067\u30d2\u30b1\u304c\u767a\u751f\u3059\u308b\u306e\u3067\u3059\u304b\uff1f",
+                    "DI<0.10\u306b\u3059\u308b\u305f\u3081\u306e\u518d\u52a0\u71b1\u6e29\u5ea6\u306f\uff1f",
+                    "\u30d3\u30aa\u6570\u306f\u30d2\u30b1\u306b\u3069\u3046\u5f71\u97ff\u3057\u307e\u3059\u304b\uff1f",
+                    "\u751f\u7523\u30e9\u30a4\u30f3\u306e\u30c7\u30fc\u30bf\u3068\u6bd4\u8f03\u3057\u3066\u304f\u3060\u3055\u3044",
+                ]
             else:
                 suggestions = [
                     "Why is \u30d2\u30b1 forming at the top surface?",
@@ -2530,11 +2558,13 @@ def main():
                 f'<div style="font-size:.66rem;color:#6a82ad;padding-top:6px">{mem_txt}</div>',
                 unsafe_allow_html=True)
             if mc2.button(t("clear_chat"), key="llm_clear", width='stretch'):
-                advisor.clear_history()
-                advisor.clear_cache()
-                # Only drop cached analyses — never delete the composer's own
-                # widget key (llm_chatbox), which is already instantiated this
-                # run and would raise if modified/deleted.
+                # Clear this session's OWN history only (not the shared cache
+                # object) so we never touch another visitor's conversation.
+                st.session_state.chat_hist = []
+                advisor.clear_history(st.session_state.chat_sid)
+                # Only drop cached analyses/follow-ups — never delete the
+                # composer's own widget key (llm_chatbox), which is already
+                # instantiated this run and would raise if modified/deleted.
                 for k in list(st.session_state.keys()):
                     if k.startswith(("llm_analysis_", "fups_")): del st.session_state[k]
                 st.session_state.pop("pending_q", None)
@@ -2556,14 +2586,16 @@ def main():
                 #    reads as a natural continuation once the page reruns.
                 st.markdown(_bubble_html("user", ask_q), unsafe_allow_html=True)
 
+                _ja = st.session_state.get("lang") == "ja"
                 if _groq:
-                    think_lbl = "Thinking with Groq\u2026"
+                    think_lbl = "Groq\u3067\u8003\u3048\u3066\u3044\u307e\u3059\u2026" if _ja else "Thinking with Groq\u2026"
                 elif st_info["ollama_up"] and not st_info["model_warm"]:
-                    think_lbl = "Loading model (first query, 30-90s)\u2026"
+                    think_lbl = ("\u30e2\u30c7\u30eb\u3092\u8aad\u307f\u8fbc\u307f\u4e2d\uff08\u521d\u56de\u300130\u301c90\u79d2\uff09\u2026" if _ja
+                                 else "Loading model (first query, 30-90s)\u2026")
                 elif st_info["ollama_up"]:
-                    think_lbl = "Thinking\u2026"
+                    think_lbl = "\u8003\u3048\u3066\u3044\u307e\u3059\u2026" if _ja else "Thinking\u2026"
                 else:
-                    think_lbl = "Computing\u2026"
+                    think_lbl = "\u8a08\u7b97\u4e2d\u2026" if _ja else "Computing\u2026"
 
                 typing_ph = st.empty()
                 typing_ph.markdown(_thinking_bubble(think_lbl), unsafe_allow_html=True)
@@ -2575,7 +2607,10 @@ def main():
 
                 for chunk in advisor.chat_stream(ask_q,
                                                  context=ctx_str[:600],
-                                                 sim_results=sim_c):
+                                                 sim_results=sim_c,
+                                                 history=st.session_state.chat_hist,
+                                                 session_id=st.session_state.chat_sid,
+                                                 lang=st.session_state.get("lang", "en")):
                     accumulated += chunk
                     chunk_count += 1
                     if chunk_count == 1:

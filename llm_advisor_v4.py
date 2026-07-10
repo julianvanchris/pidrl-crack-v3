@@ -1120,7 +1120,10 @@ class PILLMAdvisor:
 
     def chat_stream(self, user_message: str,
                     context: str = "",
-                    sim_results: Optional[dict] = None):
+                    sim_results: Optional[dict] = None,
+                    history: Optional[list] = None,
+                    session_id: str = "default",
+                    lang: str = "en"):
         """
         Streaming version of chat() — yields text chunks as they arrive
         from Ollama, so the UI can display tokens in real-time via
@@ -1148,14 +1151,28 @@ class PILLMAdvisor:
         ctx_str = "\n\n".join(ctx_parts)
         full_prompt = f"{ctx_str}\n\nQuestion: {user_message}" if ctx_str else user_message
 
+        # Per-session conversation history. In deployment each browser session
+        # passes its OWN list (via st.session_state) so visitors never see each
+        # other's chat; the shared self._history is only used for CLI/local use.
+        hist_ref = history if history is not None else self._history
+
+        # Language directive — when the UI is in Japanese, tell the model to
+        # answer in Japanese (Groq and Ollama both honour this). Technical
+        # tokens (DI, Biot, T_reheat, ヒケ) are kept as-is for clarity.
+        ja_directive = ("\n\nIMPORTANT: The user is on the Japanese interface. "
+                        "Respond ENTIRELY in natural, professional Japanese "
+                        "(必ず日本語で回答してください). Keep technical terms such as "
+                        "DI, Biot number, T_reheat and ヒケ untranslated."
+                        if lang == "ja" else "")
+
         full_response = ""
         lc_handled    = False   # did the LangChain engine already store this turn?
 
         # ── PRIMARY (deployment): Groq cloud backend, streaming ───────────
         if self.groq_engine is not None:
-            sys_prompt = self.lean_system_prompt if self.rag_active else (
-                self.system_prompt or self.lean_system_prompt)
-            messages = self._history[-6:] + [{"role": "user", "content": full_prompt}]
+            sys_prompt = (self.lean_system_prompt if self.rag_active else (
+                self.system_prompt or self.lean_system_prompt)) + ja_directive
+            messages = hist_ref[-6:] + [{"role": "user", "content": full_prompt}]
             self._last_was_cold_start = False
             try:
                 for chunk in self.groq_engine.stream(sys_prompt, messages, max_tokens=700):
@@ -1174,9 +1191,9 @@ class PILLMAdvisor:
         elif self._mode.startswith("ollama") and self.model_health.get("healthy") is not False:
             mode_parts   = self._mode.split(":")
             model_to_use = mode_parts[1].split("+")[0] if len(mode_parts) > 1 else self.model
-            sys_prompt   = self.lean_system_prompt if self.rag_active else (
+            sys_prompt   = (self.lean_system_prompt if self.rag_active else (
                 self.system_prompt or self.lean_system_prompt
-            )
+            )) + ja_directive
             self._last_was_cold_start = not self.is_warm
 
             # ── PRIMARY: LangChain contextual engine ──────────────────────
@@ -1186,7 +1203,10 @@ class PILLMAdvisor:
             # through to the raw-requests path below.
             if self.lc_engine is not None:
                 try:
-                    for chunk in self.lc_engine.stream(user_message, rag_context=ctx_str):
+                    for chunk in self.lc_engine.stream(
+                            user_message,
+                            rag_context=ctx_str + ja_directive,
+                            session_id=session_id):
                         full_response += chunk
                         yield chunk
                     if full_response.strip():
@@ -1201,7 +1221,7 @@ class PILLMAdvisor:
             # ── SECONDARY: raw-requests streaming ─────────────────────────
             if not full_response.strip():
                 messages = [{"role": "system", "content": sys_prompt}]
-                messages += self._history[-6:]
+                messages += hist_ref[-6:]
                 messages.append({"role": "user", "content": full_prompt})
                 timeout = 240.0 if self._last_was_cold_start else 180.0
                 for chunk in self.client.chat_stream(model_to_use, messages, timeout=timeout):
@@ -1225,16 +1245,19 @@ class PILLMAdvisor:
             full_response = self._fallback(sim_results, user_message)
             yield full_response
 
-        # Update history + cache once streaming is complete
-        self._history.append({"role": "user",      "content": user_message})
-        self._history.append({"role": "assistant", "content": full_response})
-        if len(self._history) > 20:
-            self._history = self._history[-20:]
+        # Update history + cache once streaming is complete. Append/trim the
+        # session's OWN list IN PLACE (del-slice, not reassignment) so the
+        # caller's st.session_state reference stays valid.
+        hist_ref.append({"role": "user",      "content": user_message})
+        hist_ref.append({"role": "assistant", "content": full_response})
+        if len(hist_ref) > 20:
+            del hist_ref[:len(hist_ref) - 20]
         # Keep LangChain memory complete even when a non-LangChain path
         # answered this turn, so follow-ups stay contextual.
         if not lc_handled and self.lc_engine is not None:
             try:
-                self.lc_engine.add_exchange(user_message, full_response)
+                self.lc_engine.add_exchange(user_message, full_response,
+                                            session_id=session_id)
             except Exception:
                 pass
         key = self._cache_key("chat", user_message, context[:200])
@@ -1258,17 +1281,29 @@ class PILLMAdvisor:
             return "🚨 Severe ヒケ — redesign zone schedule + strong reheat"
         return "🛑 Critical failure — halt production"
 
-    def suggest_followups(self, question: str, answer: str, n: int = 3) -> list:
+    def suggest_followups(self, question: str, answer: str, n: int = 3,
+                          lang: str = "en") -> list:
         """Generate short, contextual follow-up questions from the last
-        exchange (cheap LLM call). Falls back to generic ones if no LLM."""
-        static = ["How do I get DI below 0.10?",
-                  "What T_reheat gives the best healing?",
-                  "How does the Biot number change this?"]
-        sys = ("You generate concise, relevant follow-up questions for a "
-               "deodorant-stick solidification process engineer. Output the "
-               "questions ONLY — one per line, no numbering, each under 9 words.")
-        prompt = (f"Suggest {n} natural follow-up questions to continue this chat.\n\n"
-                  f"Q: {question}\nA: {answer[:700]}")
+        exchange (cheap LLM call). Falls back to generic ones if no LLM.
+        Honours `lang` so the Japanese UI gets Japanese follow-ups."""
+        if lang == "ja":
+            static = ["DIを0.10以下にするには？",
+                      "最適な再加熱温度（T_reheat）は？",
+                      "ビオ数はどう影響しますか？"]
+            sys = ("あなたはデオドラントスティックの固化プロセス技術者向けに、"
+                   "簡潔で的確なフォローアップ質問を生成します。質問のみを出力し、"
+                   "番号は付けず、1行に1問、各質問は日本語で15文字程度にしてください。")
+            prompt = (f"次の会話を続けるための自然なフォローアップ質問を{n}個提案してください。\n\n"
+                      f"Q: {question}\nA: {answer[:700]}")
+        else:
+            static = ["How do I get DI below 0.10?",
+                      "What T_reheat gives the best healing?",
+                      "How does the Biot number change this?"]
+            sys = ("You generate concise, relevant follow-up questions for a "
+                   "deodorant-stick solidification process engineer. Output the "
+                   "questions ONLY — one per line, no numbering, each under 9 words.")
+            prompt = (f"Suggest {n} natural follow-up questions to continue this chat.\n\n"
+                      f"Q: {question}\nA: {answer[:700]}")
         txt = ""
         try:
             if self.groq_engine is not None:
@@ -1301,10 +1336,10 @@ class PILLMAdvisor:
         ok, err = self.groq_engine.ping()
         return ok, (f"connected · model {self.groq_engine.model}" if ok else err)
 
-    def clear_history(self):
+    def clear_history(self, session_id: str = "default"):
         self._history.clear()
         if self.lc_engine is not None:
-            self.lc_engine.clear()
+            self.lc_engine.clear(session_id)
 
     def clear_cache(self):
         self._cache.clear()
