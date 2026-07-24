@@ -65,6 +65,17 @@ SCENARIOS={
         "h_cool":5.0,"h_reheat":15.0,
         "desc":"DRL: 4-zone (17 min) + reheat (10 min) = 27 min. DI→SAFE."
     },
+    "🏭 CBIC actual — Cool + simultaneous top reheat":{
+        "T_fill":80.0,
+        "zones":[{"T":60.0,"duration":6.0,"label":"Zone 1"},
+                 {"T":45.0,"duration":7.0,"label":"Zone 2"},
+                 {"T":30.0,"duration":7.0,"label":"Zone 3 (sub-RT air)"}],
+        "reheat":{"T":78.0,"duration":8.0,"mode":"simultaneous"},
+        "h_cool":8.0,"h_reheat":18.0,
+        "desc":("Matches CBIC data: bulk cooled continuously (cold air ≤ RT) "
+                "while ONLY the top surface is reheated at the same time. No "
+                "separate reheat block → shorter cycle, top ヒケ suppressed."),
+    },
 }
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -152,7 +163,20 @@ TR = {
     "zones_help": "Add zones to create step-function cooling profile",
     "add_zone": "➕ Add Zone", "reset": "↺ Reset",
     "hot_air_reheat": "Hot-Air Reheat",
-    "reheat_help": "After cooling. Set duration=0 to skip.",
+    "reheat_help": "Set duration=0 to skip.",
+    "reheat_mode": "Reheat timing",
+    "reheat_seq": "After cooling (sequential)",
+    "reheat_sim": "Simultaneous — top surface only",
+    "reheat_mode_help": ("Sequential: cool the whole bulk, then reheat it. "
+                         "Simultaneous: keep cooling the bulk while reheating "
+                         "ONLY the top surface at the same time (matches the "
+                         "CBIC verification & production data)."),
+    "reheat_window": "Surface-reheat window (min)",
+    "reheat_window_help": ("How long the top surface is reheated while the bulk "
+                           "keeps cooling. Overlaps the tail of cooling — the "
+                           "cycle is NOT extended."),
+    "reheat_sim_note": ("⚡ Bulk cooled continuously; only the top surface is "
+                        "reheated — shorter cycle, top ヒケ suppressed."),
     "convection": "Convection Coefficients", "drl_optimiser": "DRL Optimiser",
     "drl_help": "Searches 500+ combos · lowest DI · ≤ 30 min",
     # Crack tab
@@ -203,7 +227,18 @@ TR = {
     "zones_help": "ゾーンを追加して階段状の冷却プロファイルを作成",
     "add_zone": "➕ ゾーン追加", "reset": "↺ リセット",
     "hot_air_reheat": "熱風再加熱",
-    "reheat_help": "冷却後に実行。時間=0でスキップ。",
+    "reheat_help": "時間=0でスキップ。",
+    "reheat_mode": "再加熱のタイミング",
+    "reheat_seq": "冷却後（逐次）",
+    "reheat_sim": "同時 — 上面のみ",
+    "reheat_mode_help": ("逐次：バルク全体を冷却してから再加熱します。"
+                         "同時：バルクを冷却し続けながら、上面のみを同時に"
+                         "再加熱します（CBICの検証・生産データに一致）。"),
+    "reheat_window": "上面再加熱の時間（分）",
+    "reheat_window_help": ("バルクを冷却し続けながら上面を再加熱する時間。"
+                           "冷却の終盤と重なるため、サイクル時間は延びません。"),
+    "reheat_sim_note": ("⚡ バルクは連続冷却し、上面のみ再加熱 — "
+                        "サイクル短縮、上面ヒケを抑制。"),
     "convection": "対流熱伝達係数", "drl_optimiser": "DRL最適化",
     "drl_help": "500以上の組合せを探索 · 最小DI · 30分以内",
     "crack_title": "亀裂進展 — 再加熱の前後比較",
@@ -346,21 +381,55 @@ def export_figure_panel(figs, base_name, key):
 
 # ── Core physics timeline ──────────────────────────────────────────────────
 def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
+    # ── Reheat mode ────────────────────────────────────────────────────────
+    #  "sequential"  : the classic model — cool the whole bulk, THEN switch the
+    #                  entire environment to hot air for a reheat block, then a
+    #                  short final cool.  (Reheat happens AFTER cooling.)
+    #  "simultaneous": matches the CBIC production/verification data — the bulk
+    #                  is cooled CONTINUOUSLY (cold air) while ONLY the top
+    #                  surface is locally reheated at the same time.  The reheat
+    #                  window overlaps the tail of the cooling schedule (no
+    #                  appended block), so the cycle is shorter and the core
+    #                  keeps solidifying while the skin stays soft → the top
+    #                  surface ヒケ is suppressed without slowing the bulk.
+    mode   = str(reheat.get("mode","sequential")).lower()
     t_cool  = sum(z["duration"] for z in zones)
-    t_reh   = reheat["duration"]
-    t_fin   = float(np.clip(30.0 - t_cool - t_reh - 0.5, 2.0, 8.0))
-    t_tot   = t_cool+t_reh+t_fin
-    times   = np.linspace(0,t_tot,n_pts)
+    t_reh   = float(reheat["duration"])
+    simul   = (mode == "simultaneous") and t_reh > 0.0
 
-    # Zone boundaries
+    # Zone boundaries (the core cooling schedule — identical for both modes)
     zb=[]; ta=0.0
     for z in zones:
         zb.append((ta,ta+z["duration"],z["T"]))
         ta+=z["duration"]
-    reh_s=ta; reh_e=ta+t_reh
+
+    if simul:
+        # Surface reheat runs concurrently from the START of cooling; the bulk
+        # never sees hot air. This holds the top skin soft through the early
+        # solidification window, so the surface solidifies LATER — while it is
+        # warmer than the already-cooled core (inverted gradient → no skin is
+        # pulled over a liquid pocket → sink mark suppressed). No separate
+        # reheat block → shorter total cycle.
+        t_reh_eff = min(t_reh, t_cool)
+        reh_s = 0.0
+        reh_e = t_reh_eff
+        t_fin = float(np.clip(30.0 - t_cool - 0.5, 2.0, 8.0))
+        t_tot = t_cool + t_fin
+    else:
+        reh_s = ta; reh_e = ta + t_reh
+        t_fin = float(np.clip(30.0 - t_cool - t_reh - 0.5, 2.0, 8.0))
+        t_tot = t_cool + t_reh + t_fin
+
+    times   = np.linspace(0,t_tot,n_pts)
 
     tau_c = max(2.0, RHO*CP*R_M**2/(K_TH*(h_cool*R_M/K_TH+0.1)*10))/60.0
     tau_r = max(1.0, RHO*CP*R_M**2/(K_TH*(h_reheat*R_M/K_TH+0.1)*10))/60.0
+
+    def _zone_env(tm):
+        env=float(T_ROOM)
+        for t0,t1,Tz in zb:
+            if t0<=tm<=t1: env=float(Tz); break
+        return env
 
     Ts=np.zeros(n_pts); Tc=np.zeros(n_pts)
     Te=np.zeros(n_pts); H=np.zeros(n_pts)
@@ -368,20 +437,31 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
 
     for i in range(1,n_pts):
         tm=float(times[i]); dt=float(times[i]-times[i-1])
-        if tm<reh_s:
-            env=float(T_ROOM)
-            for t0,t1,Tz in zb:
-                if t0<=tm<=t1: env=float(Tz); break
-            tau=tau_c; H[i]=h_cool
-        elif tm<reh_e:
-            env=float(reheat["T"]); tau=tau_r; H[i]=h_reheat
+        if simul:
+            # Core ALWAYS follows the cooling schedule (never reheated).
+            if tm <= t_cool:
+                env_core=_zone_env(tm); tau_core=tau_c; H_core=h_cool
+            else:
+                env_core=float(T_ROOM); tau_core=tau_c*1.5; H_core=h_cool
+            # Surface: hot air only inside the concurrent window; else = core.
+            if reh_s <= tm < reh_e:
+                env_surf=float(reheat["T"]); tau_surf=tau_r; H_surf=h_reheat
+            else:
+                env_surf=env_core; tau_surf=tau_core; H_surf=H_core
         else:
-            env=float(T_ROOM); tau=tau_c*1.5; H[i]=h_cool
-        Te[i]=env
-        Ts[i]=env+(Ts[i-1]-env)*np.exp(-dt/max(tau,0.01))
+            if tm<reh_s:
+                env=_zone_env(tm); tau=tau_c; H_surf=h_cool
+            elif tm<reh_e:
+                env=float(reheat["T"]); tau=tau_r; H_surf=h_reheat
+            else:
+                env=float(T_ROOM); tau=tau_c*1.5; H_surf=h_cool
+            env_surf=env_core=env; tau_surf=tau_core=tau; H_core=H_surf
+        H[i]=H_surf                     # DI uses the SURFACE Biot (top-face damage)
+        Te[i]=env_surf
+        Ts[i]=env_surf+(Ts[i-1]-env_surf)*np.exp(-dt/max(tau_surf,0.01))
         Ts[i]=float(np.clip(Ts[i],T_ROOM-2,T_fill+2))
-        lag=float(np.clip(1.0/(1.0+H[i]*R_M/K_TH*0.5),0.3,0.9))
-        Tc[i]=env+(Tc[i-1]-env)*np.exp(-dt/max(tau*(1+lag),0.01))
+        lag=float(np.clip(1.0/(1.0+H_core*R_M/K_TH*0.5),0.3,0.9))
+        Tc[i]=env_core+(Tc[i-1]-env_core)*np.exp(-dt/max(tau_core*(1+lag),0.01))
 
     # ODE-based DI — non-flat, rises in mushy zone, dips during reheat,
     # stops accumulating once material is fully solid and cool.
@@ -396,21 +476,31 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
         dT_d= max(0.0, float(T_fill)-float(Te[i]))
         cs  = float(np.clip(dT_d/60.0,0,1))
 
-        # Damage forms ONLY during phase transition (mushy zone).
-        # Remove the gradient condition — it caused DI to re-accumulate
-        # in the final cool phase equally for all scenarios, washing out
-        # the difference between Bad/Good/DRL-Optimal.
+        # Inverted thermal gradient (anti-sink). A top-surface sink mark (ヒケ)
+        # forms when the SURFACE solidifies into a skin while the CORE beneath
+        # is still liquid/warmer — the shrinking interior pulls the skin down.
+        # When the surface is held HOTTER than the core (Ts > Tc), which only
+        # happens under simultaneous top-surface reheat, that mechanism reverses:
+        # the surface stays soft and solidifies last, so no skin is pulled over a
+        # liquid pocket. inv_grad is exactly 0 for all normal cooling (Ts ≤ Tc),
+        # so it never changes the sequential/pure-cooling scenarios.
+        inv_grad = float(np.clip((T - Tc_) / 20.0, 0.0, 1.0))
+
+        # Damage forms ONLY during phase transition (mushy zone). Suppressed
+        # when the surface is warmer than the core (inv_grad).
         if fl_v > 0.01:
-            k_form = (0.60 * Bi_r * cs * (1.0 + 2.0 * mw)   # peaks strongly in mushy
+            k_form = ((0.60 * Bi_r * cs * (1.0 + 2.0 * mw)   # peaks strongly in mushy
                     + 0.15 * Bi_r * cs)                        # baseline during any liquid phase
+                    * (1.0 - 0.9 * inv_grad))
         else:
             k_form = 0.0  # fully solid → no new damage
 
         # Healing driver: activated above 55°C (material softens)
         # 3.5x stronger during active reheat phase → allows DI→0 for T_reheat≥85°C
+        # Plus an anti-sink bonus while the surface is held hotter than the core.
         hd     = max(0.0, T - 55.0) / 10.0
         in_reh = (reh_s <= tm < reh_e and t_reh > 0)
-        k_heal = float(np.clip(hd * (3.5 if in_reh else 0.2), 0.0, 2.0))
+        k_heal = float(np.clip(hd * (3.5 if in_reh else 0.2) + 1.5 * inv_grad, 0.0, 2.5))
         # Analytical ODE integration — stable for any k_heal×dt value.
         # dDI/dt = k_form×(1−DI) − k_heal×DI
         # Equilibrium: DI_eq = k_form / (k_form + k_heal)
@@ -424,11 +514,13 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
         DI_arr[i] = DI
 
     dT_dt=np.gradient(Ts,times)
+    t_reheat_out = (reh_e - reh_s) if simul else t_reh
     return dict(times=times.tolist(),T_surf=Ts.tolist(),T_core=Tc.tolist(),
                 T_env=Te.tolist(),dT=(Tc-Ts).tolist(),dTdt=dT_dt.tolist(),
                 DI=DI_arr.tolist(),T_fill=float(T_fill),
-                t_cool=t_cool,t_reheat=t_reh,t_final=t_fin,t_total=t_tot,
+                t_cool=t_cool,t_reheat=t_reheat_out,t_final=t_fin,t_total=t_tot,
                 reheat_start=reh_s,reheat_end=reh_e,reheat_T=float(reheat["T"]),
+                reheat_mode=("simultaneous" if simul else "sequential"),
                 zones=zones)
 
 # ── Peridynamic crack helpers (module-level — used by both fig_belt and main) ──
@@ -1137,15 +1229,30 @@ def sidebar():
     if "reheat" not in st.session_state:
         st.session_state.reheat=dict(DEFAULT_REHEAT)
     reh=st.session_state.reheat
+    # Reheat timing mode — sequential (after cooling) vs simultaneous
+    # (surface-only reheat concurrent with continuous bulk cooling; matches
+    #  the CBIC verification/production data).
+    _mode_opts = [t("reheat_seq"), t("reheat_sim")]
+    _cur_mode  = reh.get("mode","sequential")
+    _mode_idx  = 1 if _cur_mode == "simultaneous" else 0
+    _mode_sel  = st.sidebar.radio(t("reheat_mode"), _mode_opts, index=_mode_idx,
+        help=t("reheat_mode_help"))
+    reh["mode"] = "simultaneous" if _mode_sel == t("reheat_sim") else "sequential"
+    _simul = reh["mode"] == "simultaneous"
+
     reh["T"]=float(st.sidebar.slider("T_reheat (°C)",40.0,120.0,float(reh.get("T",70.0)),1.0,
         help="Client unknown → DRL optimises. ≥62°C enters mushy zone."))
-    reh["duration"]=float(st.sidebar.slider("Reheat duration (min)",0.0,15.0,
-        float(reh.get("duration",10.0)),0.5,help="Client target ~10 min"))
+    reh["duration"]=float(st.sidebar.slider(
+        t("reheat_window") if _simul else "Reheat duration (min)",0.0,15.0,
+        float(reh.get("duration",10.0)),0.5,
+        help=(t("reheat_window_help") if _simul else "Client target ~10 min")))
 
     if reh["duration"]>0:
         tau_r=3.0; T_reach=reh["T"]-(reh["T"]-T_last)*np.exp(-reh["duration"]/tau_r)
         flag="✅ above solidus → healing" if T_reach>=T_SOL_C else "⚠️ below solidus → softening only"
         st.sidebar.caption(f"Surface reaches ~{T_reach:.0f}°C | {flag}")
+    if _simul:
+        st.sidebar.caption(t("reheat_sim_note"))
 
     _sh("⚡", t("convection"))
     h_cool=float(st.sidebar.slider("h_cool (W/m²K)",2.0,20.0,
@@ -1623,7 +1730,8 @@ def main():
     _hs = _json.dumps({
         "T_fill": params["T_fill"],
         "zones":  [(z["T"],z["duration"]) for z in params["zones"]],
-        "reheat": (params["reheat"]["T"], params["reheat"]["duration"]),
+        "reheat": (params["reheat"]["T"], params["reheat"]["duration"],
+                   params["reheat"].get("mode","sequential")),
         "h_cool": params["h_cool"], "h_reheat": params["h_reheat"],
     }, sort_keys=True)
     _hash = hashlib.md5(_hs.encode()).hexdigest()[:8]
@@ -1699,8 +1807,14 @@ def main():
     reheat    = params["reheat"]
     t_cool    = sum(z["duration"] for z in zones)
     t_reh     = reheat["duration"]
-    t_fin     = float(np.clip(30-t_cool-t_reh-0.5,2,8))
-    t_tot_est = t_cool+t_reh+t_fin
+    _simul_flow = reheat.get("mode")=="simultaneous" and t_reh>0
+    if _simul_flow:
+        # Surface reheat overlaps cooling → no separate block added to the cycle.
+        t_fin     = float(np.clip(30-t_cool-0.5,2,8))
+        t_tot_est = t_cool+t_fin
+    else:
+        t_fin     = float(np.clip(30-t_cool-t_reh-0.5,2,8))
+        t_tot_est = t_cool+t_reh+t_fin
     ZONE_COLS = ["#ef4444","#f97316","#f59e0b","#10b981","#06b6d4","#8b5cf6","#ec4899"]
 
     def _flow_box(label, sub, col, w_pct):
@@ -1719,8 +1833,16 @@ def main():
         boxes.append(arrow)
         boxes.append(_flow_box(f"❄ {z['label']}",f"{z['T']:.0f}°C / {z['duration']:.0f}m",col,1))
     if t_reh>0:
-        boxes.append(arrow)
-        boxes.append(_flow_box("🔥 Reheat",f"{reheat['T']:.0f}°C / {t_reh:.0f}m","#f97316",1))
+        if _simul_flow:
+            # Concurrent surface reheat — shown as a parallel step (∥), not an
+            # extra sequential block, since it overlaps the cooling above.
+            boxes.append('<div style="color:#f97316;font-size:.9rem;display:flex;'
+                         'align-items:center;flex-shrink:0;padding:0 2px">∥</div>')
+            boxes.append(_flow_box("🔥 Top reheat (concurrent)",
+                                   f"{reheat['T']:.0f}°C / {t_reh:.0f}m ∥ cooling","#f97316",1.2))
+        else:
+            boxes.append(arrow)
+            boxes.append(_flow_box("🔥 Reheat",f"{reheat['T']:.0f}°C / {t_reh:.0f}m","#f97316",1))
     boxes.append(arrow)
     boxes.append(_flow_box("🏠 Room","23°C","#3b82f6",0.8))
     ok_col = "#10b981" if t_tot_est<=30 else "#ef4444"
