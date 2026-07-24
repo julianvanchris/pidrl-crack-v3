@@ -667,6 +667,9 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
     t_cool=float(ts["t_cool"]); t_reh=float(ts["t_reheat"])
     t_tot=float(ts["t_total"]); t_fin=float(ts["t_final"])
     reh_s=float(ts["reheat_start"]); reh_e=float(ts["reheat_end"])
+    # Simultaneous mode: reheat is applied to the TOP surface concurrently with
+    # bulk cooling (no separate reheat leg on the return lane).
+    simul=(ts.get("reheat_mode")=="simultaneous" and t_reh>0)
 
     static=[]
     # TOP LANE — cooling zones
@@ -687,32 +690,70 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
             showlegend=False,hoverinfo="skip"))
         x_acc+=xw
 
-    # BOTTOM LANE — reheat + final
-    r_frac=t_reh/max(t_reh+t_fin,0.01) if t_reh>0 else 0
-    xrs=L_COOL*(1-r_frac)
-    if t_reh>0:
-        rh_lbl=f"🔥 Reheat<br>{reheat['T']:.0f}°C/{t_reh:.0f}min"
+    if simul:
+        # ── SIMULTANEOUS ── The top surface is reheated CONCURRENTLY with the
+        # bulk cooling, so there is no separate reheat leg. Draw the reheat as a
+        # glowing hot slab hovering ABOVE the cooling zones (over the window's
+        # x-range) with downward airflow onto the top surface; the whole return
+        # lane is just final cooling.
+        xrs=L_COOL                                   # no reheat block on bottom lane
+        xr_top=(reh_e/max(t_cool,0.01))*L_COOL       # reheat window x-extent on top lane
+        z_slab=H_S+2.2
+        rh_lbl=f"🔥 Top-surface reheat (concurrent)<br>{reheat['T']:.0f}°C / {t_reh:.0f}min ∥ cooling"
         static.append(go.Mesh3d(
-            x=[xrs,L_COOL,L_COOL,xrs,xrs,L_COOL,L_COOL,xrs],
+            x=[0,xr_top,xr_top,0,0,xr_top,xr_top,0],
+            y=[LANE_TOP-BELT_W]*4+[LANE_TOP+BELT_W]*4,
+            z=[z_slab]*8,i=[0,4,0,2],j=[1,5,2,6],k=[3,7,3,7],
+            color="rgba(255,140,0,0.80)",opacity=0.55,flatshading=True,
+            name=rh_lbl.replace("<br>"," "),hovertemplate=rh_lbl+"<extra></extra>"))
+        static.append(go.Scatter3d(x=[xr_top*0.5],y=[LANE_TOP],z=[z_slab+0.8],
+            mode="text",text=[rh_lbl],textfont=dict(size=8,color="#ffd9a8"),
+            showlegend=False,hoverinfo="skip"))
+        # Downward hot-air jets from the slab onto the top surface of the belt
+        for fx in np.linspace(0.12,0.88,5):
+            axx=xr_top*float(fx)
+            for ya in [LANE_TOP-1,LANE_TOP,LANE_TOP+1]:
+                static.append(go.Scatter3d(x=[axx,axx],y=[ya,ya],z=[z_slab-0.2,H_S+0.15],
+                    mode="lines",line=dict(color="#ff8c00",width=3),
+                    showlegend=False,hoverinfo="skip"))
+        # BOTTOM (return) LANE — final cooling only
+        fin_lbl="Final Cool<br>→ Room ~23°C"
+        static.append(go.Mesh3d(
+            x=[0,L_COOL,L_COOL,0,0,L_COOL,L_COOL,0],
             y=[LANE_BOT-BELT_W]*4+[LANE_BOT+BELT_W]*4,
             z=[0]*8,i=[0,4,0,2],j=[1,5,2,6],k=[3,7,3,7],
-            color="rgba(255,140,0,0.70)",opacity=0.72,flatshading=True,
-            name=rh_lbl.replace("<br>"," "),
-            hovertemplate=rh_lbl+"<extra></extra>"))
-        static.append(go.Scatter3d(x=[(xrs+L_COOL)/2],y=[LANE_BOT],z=[0.5],
-            mode="text",text=[rh_lbl],textfont=dict(size=8,color="white"),
+            color="rgba(40,130,200,0.55)",opacity=0.65,flatshading=True,
+            name=fin_lbl.replace("<br>"," "),hovertemplate=fin_lbl+"<extra></extra>"))
+        static.append(go.Scatter3d(x=[L_COOL*0.5],y=[LANE_BOT],z=[0.5],
+            mode="text",text=["Final cool → Room 23°C"],textfont=dict(size=8,color="white"),
             showlegend=False,hoverinfo="skip"))
-    fin_lbl="Final Cool<br>→ Room ~23°C"
-    static.append(go.Mesh3d(
-        x=[0,xrs,xrs,0,0,xrs,xrs,0],
-        y=[LANE_BOT-BELT_W]*4+[LANE_BOT+BELT_W]*4,
-        z=[0]*8,i=[0,4,0,2],j=[1,5,2,6],k=[3,7,3,7],
-        color="rgba(40,130,200,0.55)",opacity=0.65,flatshading=True,
-        name=fin_lbl.replace("<br>"," "),
-        hovertemplate=fin_lbl+"<extra></extra>"))
-    static.append(go.Scatter3d(x=[xrs*0.5],y=[LANE_BOT],z=[0.5],
-        mode="text",text=["Room<br>23°C"],textfont=dict(size=8,color="white"),
-        showlegend=False,hoverinfo="skip"))
+    else:
+        # ── SEQUENTIAL ── reheat is a distinct leg on the return lane, then final.
+        r_frac=t_reh/max(t_reh+t_fin,0.01) if t_reh>0 else 0
+        xrs=L_COOL*(1-r_frac)
+        if t_reh>0:
+            rh_lbl=f"🔥 Reheat<br>{reheat['T']:.0f}°C/{t_reh:.0f}min"
+            static.append(go.Mesh3d(
+                x=[xrs,L_COOL,L_COOL,xrs,xrs,L_COOL,L_COOL,xrs],
+                y=[LANE_BOT-BELT_W]*4+[LANE_BOT+BELT_W]*4,
+                z=[0]*8,i=[0,4,0,2],j=[1,5,2,6],k=[3,7,3,7],
+                color="rgba(255,140,0,0.70)",opacity=0.72,flatshading=True,
+                name=rh_lbl.replace("<br>"," "),
+                hovertemplate=rh_lbl+"<extra></extra>"))
+            static.append(go.Scatter3d(x=[(xrs+L_COOL)/2],y=[LANE_BOT],z=[0.5],
+                mode="text",text=[rh_lbl],textfont=dict(size=8,color="white"),
+                showlegend=False,hoverinfo="skip"))
+        fin_lbl="Final Cool<br>→ Room ~23°C"
+        static.append(go.Mesh3d(
+            x=[0,xrs,xrs,0,0,xrs,xrs,0],
+            y=[LANE_BOT-BELT_W]*4+[LANE_BOT+BELT_W]*4,
+            z=[0]*8,i=[0,4,0,2],j=[1,5,2,6],k=[3,7,3,7],
+            color="rgba(40,130,200,0.55)",opacity=0.65,flatshading=True,
+            name=fin_lbl.replace("<br>"," "),
+            hovertemplate=fin_lbl+"<extra></extra>"))
+        static.append(go.Scatter3d(x=[xrs*0.5],y=[LANE_BOT],z=[0.5],
+            mode="text",text=["Room<br>23°C"],textfont=dict(size=8,color="white"),
+            showlegend=False,hoverinfo="skip"))
 
     # Rails
     for yo in [-BELT_W,BELT_W]:
@@ -728,12 +769,14 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
         mode="lines",line=dict(color="#ccc",width=3),
         showlegend=False,hoverinfo="skip"))
 
-    # Airflow arrows above reheat
-    ax_x=(xrs+L_COOL)/2 if t_reh>0 else L_COOL*0.5
-    for ya in [LANE_BOT-1,LANE_BOT,LANE_BOT+1]:
-        static.append(go.Scatter3d(x=[ax_x,ax_x],y=[ya,ya],z=[H_S+2.5,H_S+0.2],
-            mode="lines",line=dict(color="#ff8c00",width=3),
-            showlegend=False,hoverinfo="skip"))
+    # Airflow arrows above the reheat (sequential only — the simultaneous jets
+    # are already drawn onto the top lane above).
+    if not simul:
+        ax_x=(xrs+L_COOL)/2 if t_reh>0 else L_COOL*0.5
+        for ya in [LANE_BOT-1,LANE_BOT,LANE_BOT+1]:
+            static.append(go.Scatter3d(x=[ax_x,ax_x],y=[ya,ya],z=[H_S+2.5,H_S+0.2],
+                mode="lines",line=dict(color="#ff8c00",width=3),
+                showlegend=False,hoverinfo="skip"))
 
     n_st=len(static)
 
@@ -745,12 +788,29 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
     cbar=dict(title=dict(text="°C",font=dict(color="white",size=11)),
               x=0.92,len=0.40,thickness=10,tickfont=dict(size=9,color="white"))
 
-    def sxyz(sx,sy,Ts):
+    def sxyz(sx,sy,Ts,Tc=None):
+        # Colour the stick by a vertical temperature gradient: the TOP surface
+        # (天面) takes the surface temperature Ts while the body takes the core
+        # temperature Tc — so under simultaneous top-reheat you SEE a hot top
+        # sitting on a still-cooling body. Falls back to uniform Ts if no Tc.
+        if Tc is None:
+            temps=[float(Ts)]*len(TH_f)
+        else:
+            frac_h=(ZL_f/max(H_S,1e-6))**2.2          # weight toward the very top
+            temps=(float(Tc)+(float(Ts)-float(Tc))*frac_h).tolist()
         return ((sx+R_S*np.cos(TH_f)).tolist(),(sy+R_S*np.sin(TH_f)).tolist(),
-                ZL_f.tolist(),[float(Ts)]*len(TH_f))
+                ZL_f.tolist(),temps)
 
     def stick_pos(frac_t):
-        fc=t_cool/max(t_tot,0.01); fr=t_reh/max(t_tot,0.01)
+        fc=t_cool/max(t_tot,0.01)
+        if simul:
+            # No separate reheat leg: cooling on the top lane, then final cool
+            # on the return lane (reheat happens concurrently on the top lane).
+            if frac_t<=fc:
+                return float(np.clip(frac_t/max(fc,1e-6),0,1)*L_COOL),LANE_TOP
+            rel=(frac_t-fc)/max(1-fc,1e-6)
+            return float(L_COOL-rel*L_COOL),LANE_BOT
+        fr=t_reh/max(t_tot,0.01)
         if frac_t<=fc:
             return float(np.clip(frac_t/max(fc,1e-6),0,1)*L_COOL),LANE_TOP
         elif frac_t<=fc+fr:
@@ -761,10 +821,10 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
             return float(xrs-rel*xrs),LANE_BOT
 
     times_a=np.array(ts["times"]); DI_a=np.array(ts["DI"]); Ts_a=np.array(ts["T_surf"])
-    Te_a=np.array(ts["T_env"]); Tm=float(ts["t_total"])
+    Tc_a=np.array(ts["T_core"]); Te_a=np.array(ts["T_env"]); Tm=float(ts["t_total"])
 
     sx0,sy0=stick_pos(0); Ts0=float(Ts_a[0]); DI0=float(DI_a[0])
-    cx0,cy0,cz0,col0=sxyz(sx0,sy0,Ts0)
+    cx0,cy0,cz0,col0=sxyz(sx0,sy0,Ts0,float(Tc_a[0]))
     T_rng_lo=float(min(list(ts["T_surf"])+list(ts["T_core"])))-2
     T_rng_hi=float(max(ts["T_surf"]))+3
 
@@ -811,9 +871,10 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
         frac=tm/max(Tm,0.01); sx_f,sy_f=stick_pos(frac)
         idx=int(np.argmin(np.abs(times_a-tm)))
         DI_f=float(DI_a[idx]); Ts_f=float(Ts_a[idx]); Te_f=float(Te_a[idx])
+        Tc_f=float(Tc_a[idx])
         rc_f=_rcol(DI_f); rl_f=_rlbl(DI_f)
         in_reh=(reh_s<=tm<reh_e and t_reh>0)
-        px,py,pz,pc=sxyz(sx_f,sy_f,Ts_f)
+        px,py,pz,pc=sxyz(sx_f,sy_f,Ts_f,Tc_f)
 
         # Always exactly N_CRACK crack traces — padded to keep trace indices stable
         crack_t = _pad_cracks(
@@ -866,7 +927,8 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
                        backgroundcolor="rgba(8,18,36,0.5)"),
             yaxis=dict(title=dict(text="Lane",font=dict(size=11,color="#9fb4d4")),
                        tickfont=dict(size=9,color="#6b82a8"),gridcolor="#10233f",
-                       ticktext=["← Reheat / Final","","Cooling →"],
+                       ticktext=(["← Final cool","","Cooling + top reheat →"] if simul
+                                 else ["← Reheat / Final","","Cooling →"]),
                        tickvals=[LANE_BOT,0,LANE_TOP],
                        zerolinecolor="#10233f",showbackground=True,
                        backgroundcolor="rgba(8,18,36,0.35)"),
@@ -887,8 +949,10 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
                     xanchor="left",yanchor="top"),
         # Title centred at the very top; Play/Pause as a compact HORIZONTAL
         # group pinned top-left BELOW the title band so they never overlap it.
-        title=dict(text=(f"<b>U-Turn Conveyor</b>  ·  {len(zones)} zones → 🔥 Reheat → Final  "
-                         f"·  Bi={Bi:.3f}  ·  {t_tot:.0f} min"),
+        title=dict(text=((f"<b>U-Turn Conveyor</b>  ·  {len(zones)} zones + 🔥 concurrent top reheat → Final  "
+                          f"·  Bi={Bi:.3f}  ·  {t_tot:.0f} min") if simul else
+                         (f"<b>U-Turn Conveyor</b>  ·  {len(zones)} zones → 🔥 Reheat → Final  "
+                          f"·  Bi={Bi:.3f}  ·  {t_tot:.0f} min")),
                    font=dict(size=13,color="#dde8ff"),x=0.5,xanchor="center",y=0.99),
         updatemenus=[dict(type="buttons",direction="right",showactive=False,
             y=1.16,x=0.0,xanchor="left",yanchor="top",bgcolor="rgba(15,29,56,0.9)",
