@@ -1340,48 +1340,67 @@ def sidebar():
     _sh("🤖", t("drl_optimiser"))
     st.sidebar.caption(t("drl_help"))
     if st.sidebar.button("⚡ Run DRL Optimise", type="primary", width='stretch'):
-        with st.spinner("DRL optimising zone schedule + reheat..."):
-            best_score=float("inf"); best_z=None; best_r=None
-            best_h_reh=h_reh; best_h_cool=h_cool; T_fill_drl=T_fill
-            for T_reh in [65,72,78,85,92,100,110]:
-                for h_reh_t in [12.0,18.0,25.0]:
-                    for h_cool_t in [h_cool, max(2.0,h_cool*0.6)]:
-                        for nz in [3,4,5]:
-                            for dist in ["mushy_dwell","linear","top_heavy"]:
-                                reh_dur = 10.0
-                                # Hard budget: cool + reheat + final ≤ 30 min
-                                cool_budget = 30.0 - reh_dur - 3.0  # 17 min max
-                                if dist=="linear":
-                                    step=(T_fill_drl-T_TARGET)/nz
-                                    temps=[T_fill_drl-(k+1)*step for k in range(nz)]
-                                    durs=[cool_budget/nz]*nz
-                                elif dist=="top_heavy":
-                                    temps=[T_fill_drl-(T_fill_drl-T_TARGET)*(((k+1)/nz)**0.55) for k in range(nz)]
-                                    durs=[cool_budget/nz]*nz
-                                else:  # mushy_dwell
-                                    step=(T_fill_drl-T_TARGET)/nz
-                                    temps=[T_fill_drl-(k+1)*step for k in range(nz)]
-                                    raw=[6.0 if 55<=T<=75 else 3.0 for T in temps]
-                                    s=cool_budget/sum(raw); durs=[d*s for d in raw]
-                                t_c=sum(durs)
-                                # Final cool from budget
-                                t_f=30.0-t_c-reh_dur
-                                if t_f<1.5: continue  # skip infeasible
-                                tz=[{"T":round(T,1),"duration":round(d,1),"label":f"Zone {k+1}"} for k,(T,d) in enumerate(zip(temps,durs))]
-                                reh_t={"T":float(T_reh),"duration":reh_dur}
-                                try:
-                                    tt=build_timeline(T_fill_drl,tz,reh_t,h_cool_t,h_reh_t,n_pts=80)
-                                    if tt["t_total"]>30.5: continue  # hard reject
-                                    DI_pk=max(tt["DI"]); DI_fin=float(tt["DI"][-1])
-                                    score=0.6*DI_pk+0.4*DI_fin
-                                    if score<best_score:
-                                        best_score=score; best_z=tz; best_r=reh_t
-                                        best_h_reh=h_reh_t; best_h_cool=h_cool_t
-                                except: pass
-            if best_z:
+        with st.spinner("DRL optimising zone schedule + reheat (both timings)..."):
+            T_fill_drl=T_fill; reh_dur=10.0
+            # Optimise the schedule for BOTH reheat timings independently, so we
+            # can report each option's best result. The applied result uses the
+            # timing currently selected on the radio — the DRL run never flips
+            # the user's radio choice.
+            best={"sequential":{"score":float("inf")},
+                  "simultaneous":{"score":float("inf")}}
+            for mode in ("sequential","simultaneous"):
+                # Simultaneous reheat overlaps cooling → it adds NO time to the
+                # 30-min budget, so more cooling budget is available.
+                cool_budget = (30.0-3.0) if mode=="simultaneous" else (30.0-reh_dur-3.0)
+                for T_reh in [65,72,78,85,92,100,110]:
+                    for h_reh_t in [12.0,18.0,25.0]:
+                        for h_cool_t in [h_cool, max(2.0,h_cool*0.6)]:
+                            for nz in [3,4,5]:
+                                for dist in ["mushy_dwell","linear","top_heavy"]:
+                                    if dist=="linear":
+                                        step=(T_fill_drl-T_TARGET)/nz
+                                        temps=[T_fill_drl-(k+1)*step for k in range(nz)]
+                                        durs=[cool_budget/nz]*nz
+                                    elif dist=="top_heavy":
+                                        temps=[T_fill_drl-(T_fill_drl-T_TARGET)*(((k+1)/nz)**0.55) for k in range(nz)]
+                                        durs=[cool_budget/nz]*nz
+                                    else:  # mushy_dwell
+                                        step=(T_fill_drl-T_TARGET)/nz
+                                        temps=[T_fill_drl-(k+1)*step for k in range(nz)]
+                                        raw=[6.0 if 55<=T<=75 else 3.0 for T in temps]
+                                        s=cool_budget/sum(raw); durs=[d*s for d in raw]
+                                    t_c=sum(durs)
+                                    # Final cool from budget (reheat overlaps in simul mode)
+                                    t_f=(30.0-t_c) if mode=="simultaneous" else (30.0-t_c-reh_dur)
+                                    if t_f<1.5: continue  # skip infeasible
+                                    tz=[{"T":round(T,1),"duration":round(d,1),"label":f"Zone {k+1}"} for k,(T,d) in enumerate(zip(temps,durs))]
+                                    reh_t={"T":float(T_reh),"duration":reh_dur,"mode":mode}
+                                    try:
+                                        tt=build_timeline(T_fill_drl,tz,reh_t,h_cool_t,h_reh_t,n_pts=80)
+                                        if tt["t_total"]>30.5: continue  # hard reject
+                                        DI_pk=max(tt["DI"]); DI_fin=float(tt["DI"][-1])
+                                        score=0.6*DI_pk+0.4*DI_fin
+                                        if score<best[mode]["score"]:
+                                            best[mode]={"score":score,"zones":tz,"reh":reh_t,
+                                                        "h_reh":h_reh_t,"h_cool":h_cool_t,
+                                                        "di":DI_pk,"ttot":float(tt["t_total"])}
+                                    except: pass
+
+            # Apply the optimum for the CURRENTLY selected timing (keeps the
+            # radio where the user left it). Fall back to the other timing only
+            # if the current one found nothing feasible.
+            _cur=reh.get("mode","sequential")
+            apply=best[_cur] if best[_cur].get("zones") else None
+            if apply is None:
+                other="simultaneous" if _cur=="sequential" else "sequential"
+                if best[other].get("zones"):
+                    apply=best[other]; _cur=other
+            if apply and apply.get("zones"):
+                best_z=apply["zones"]; best_r=apply["reh"]
+                best_h_reh=apply["h_reh"]; best_h_cool=apply["h_cool"]
                 tt_opt=build_timeline(T_fill_drl,best_z,best_r,best_h_cool,best_h_reh,n_pts=120)
                 st.session_state.zones=   [dict(z) for z in best_z]
-                st.session_state.reheat=  dict(best_r)
+                st.session_state.reheat=  dict(best_r)   # mode=_cur → radio stays put
                 st.session_state.h_reheat=best_h_reh
                 st.session_state.h_cool=  best_h_cool
                 st.session_state.zone_version=st.session_state.get("zone_version",0)+1
@@ -1391,8 +1410,18 @@ def sidebar():
                 st.session_state.drl_done=True
                 st.session_state.drl_zones=[dict(z) for z in best_z]
                 st.session_state.drl_reh= dict(best_r)
-                DI_pk=max(tt_opt["DI"]); DI_fin=float(tt_opt["DI"][-1])
-                st.sidebar.success(f"✓ DI_peak={DI_pk:.3f} [{_rlbl(DI_pk)}] | {tt_opt['t_total']:.0f}min")
+                DI_pk=max(tt_opt["DI"])
+                def _opt_summ(m):
+                    b=best[m]
+                    if not b.get("zones"): return "n/a"
+                    return f"{b['ttot']:.0f}min · DI={b['di']:.3f} [{_rlbl(b['di'])}]"
+                st.sidebar.success(
+                    f"✓ Applied [{'Simultaneous' if _cur=='simultaneous' else 'Sequential'}]: "
+                    f"DI_peak={DI_pk:.3f} [{_rlbl(DI_pk)}] | {tt_opt['t_total']:.0f}min")
+                st.sidebar.caption(
+                    f"Both options optimised — Sequential: {_opt_summ('sequential')} · "
+                    f"Simultaneous: {_opt_summ('simultaneous')}. "
+                    f"Switch ‘Reheat timing’ to apply the other.")
                 st.rerun()
 
     return dict(T_fill=T_fill, zones=zones, reheat=reh,
