@@ -76,13 +76,36 @@ SCENARIOS={
                 "while ONLY the top surface is reheated at the same time. No "
                 "separate reheat block → shorter cycle, top ヒケ suppressed."),
     },
+    "🏭 CBIC production — Pulsed top reheat (5×20s)":{
+        "T_fill":80.0,
+        "zones":[{"T":21.0,"duration":7.0,"label":"Cold air (RT)"},
+                 {"T":21.0,"duration":7.0,"label":"Cold air (RT)"},
+                 {"T":16.0,"duration":6.0,"label":"Sub-RT air"}],
+        "reheat":{"T":100.0,"duration":0.0,"mode":"pulsed",
+                  "pulses":5,"pulse_sec":20,"pulse_window":6.0},
+        "h_cool":10.0,"h_reheat":25.0,
+        "melt":67.0,"late_cool_T":16.0,
+        "desc":("CBIC production line: bulk cooled with cold air (≤RT, → 16°C "
+                "late in the cycle); the top surface is reheated in 5 × 20 s "
+                "toggled hot-air bursts (100°C) that re-melt the skin during "
+                "solidification → surface cracks suppressed."),
+    },
 }
 
 # ── Helpers ────────────────────────────────────────────────────────────────
-def lf(T_C):
-    if T_C>=T_LIQ_C: return 1.0
-    if T_C<=T_SOL_C: return 0.0
-    return 0.5*(1+np.sin(np.pi*(T_C-T_MID_C)/(T_LIQ_C-T_SOL_C)))
+def lf(T_C, t_sol=T_SOL_C, t_liq=T_LIQ_C, t_mid=T_MID_C):
+    # Liquid fraction across the mushy zone. Bounds default to the module
+    # constants but can be overridden from a user melting point (see melt_band).
+    if T_C>=t_liq: return 1.0
+    if T_C<=t_sol: return 0.0
+    return 0.5*(1+np.sin(np.pi*(T_C-t_mid)/(t_liq-t_sol)))
+
+def melt_band(melt):
+    """Melting point -> (solidus, liquidus, mid). A 10°C mushy band centred on
+    the melting point (matches the default 62/72 when melt=67)."""
+    if melt is None: return T_SOL_C, T_LIQ_C, T_MID_C
+    melt=float(melt)
+    return melt-5.0, melt+5.0, melt
 
 def _rcol(d):
     if d>=0.80: return "#e74c3c"
@@ -167,16 +190,34 @@ TR = {
     "reheat_mode": "Reheat timing",
     "reheat_seq": "After cooling (sequential)",
     "reheat_sim": "Simultaneous — top surface only",
+    "reheat_pulsed": "Pulsed — toggled bursts (production)",
     "reheat_mode_help": ("Sequential: cool the whole bulk, then reheat it. "
-                         "Simultaneous: keep cooling the bulk while reheating "
-                         "ONLY the top surface at the same time (matches the "
-                         "CBIC verification & production data)."),
+                         "Simultaneous: cool the bulk while reheating ONLY the "
+                         "top surface at once. Pulsed: N short toggled hot-air "
+                         "bursts on the top surface (CBIC production line)."),
     "reheat_window": "Surface-reheat window (min)",
     "reheat_window_help": ("How long the top surface is reheated while the bulk "
                            "keeps cooling. Overlaps the tail of cooling — the "
                            "cycle is NOT extended."),
     "reheat_sim_note": ("⚡ Bulk cooled continuously; only the top surface is "
                         "reheated — shorter cycle, top ヒケ suppressed."),
+    "pulse_count": "Number of pulses",
+    "pulse_count_help": "How many hot-air bursts on the top surface (CBIC used ~5).",
+    "pulse_dur": "Pulse duration (sec)",
+    "pulse_dur_help": "Length of each hot-air burst (CBIC used ~20 s).",
+    "pulse_win": "Pulse window (min)",
+    "pulse_win_help": ("Bursts are spread across this early-cooling window — the "
+                       "surface skinning phase, when re-melting matters most."),
+    "pulse_note": ("⚡ {n} × {s}s top-surface bursts ({on:.1f} min total on-time) "
+                   "re-melt the skin during solidification — bulk keeps cooling."),
+    "material_ambient": "Material & Ambient",
+    "melting_point": "Melting point (°C)",
+    "melting_point_help": ("Material melting point — sets the mushy (phase-change) "
+                           "band where sink marks / cracks form."),
+    "mushy_note": "Mushy zone ≈ {lo:.0f}–{hi:.0f}°C (solidus–liquidus).",
+    "late_cool": "Late cooling air (°C)",
+    "late_cool_help": ("Ambient the final cooling stage relaxes toward. CBIC drops "
+                       "the line to ~16°C (below room temp) late in the cycle."),
     "convection": "Convection Coefficients", "drl_optimiser": "DRL Optimiser",
     "drl_help": "Searches 500+ combos · lowest DI · ≤ 30 min",
     # Crack tab
@@ -231,14 +272,33 @@ TR = {
     "reheat_mode": "再加熱のタイミング",
     "reheat_seq": "冷却後（逐次）",
     "reheat_sim": "同時 — 上面のみ",
-    "reheat_mode_help": ("逐次：バルク全体を冷却してから再加熱します。"
-                         "同時：バルクを冷却し続けながら、上面のみを同時に"
-                         "再加熱します（CBICの検証・生産データに一致）。"),
+    "reheat_pulsed": "パルス — 断続バースト（生産）",
+    "reheat_mode_help": ("逐次：バルク全体を冷却してから再加熱。"
+                         "同時：バルクを冷却しながら上面のみを同時に再加熱。"
+                         "パルス：上面に短い熱風バーストをN回断続的に適用"
+                         "（CBIC生産ライン）。"),
     "reheat_window": "上面再加熱の時間（分）",
     "reheat_window_help": ("バルクを冷却し続けながら上面を再加熱する時間。"
                            "冷却の終盤と重なるため、サイクル時間は延びません。"),
     "reheat_sim_note": ("⚡ バルクは連続冷却し、上面のみ再加熱 — "
                         "サイクル短縮、上面ヒケを抑制。"),
+    "pulse_count": "パルス回数",
+    "pulse_count_help": "上面への熱風バーストの回数（CBICは約5回）。",
+    "pulse_dur": "パルス時間（秒）",
+    "pulse_dur_help": "各熱風バーストの長さ（CBICは約20秒）。",
+    "pulse_win": "パルス適用範囲（分）",
+    "pulse_win_help": ("この初期冷却範囲にバーストを分散します — "
+                       "表皮が形成される凝固期で、再溶融が最も重要です。"),
+    "pulse_note": ("⚡ {n}回×{s}秒の上面バースト（合計{on:.1f}分）が凝固中に表皮を"
+                   "再溶融 — バルクは冷却継続。"),
+    "material_ambient": "材料と環境",
+    "melting_point": "融点（℃）",
+    "melting_point_help": ("材料の融点 — ヒケ・亀裂が生じる相変化"
+                           "（マッシー）帯を設定します。"),
+    "mushy_note": "マッシーゾーン ≈ {lo:.0f}〜{hi:.0f}℃（固相線〜液相線）。",
+    "late_cool": "後半の冷却空気（℃）",
+    "late_cool_help": ("最終冷却段階が向かう環境温度。CBICはサイクル後半に"
+                       "ラインを約16℃（室温以下）まで下げます。"),
     "convection": "対流熱伝達係数", "drl_optimiser": "DRL最適化",
     "drl_help": "500以上の組合せを探索 · 最小DI · 30分以内",
     "crack_title": "亀裂進展 — 再加熱の前後比較",
@@ -380,39 +440,59 @@ def export_figure_panel(figs, base_name, key):
                                file_name=fname, mime=mime, key=f"{key}_dl", width="stretch")
 
 # ── Core physics timeline ──────────────────────────────────────────────────
-def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
+def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120,
+                   melt=None,late_cool_T=None):
     # ── Reheat mode ────────────────────────────────────────────────────────
-    #  "sequential"  : the classic model — cool the whole bulk, THEN switch the
-    #                  entire environment to hot air for a reheat block, then a
-    #                  short final cool.  (Reheat happens AFTER cooling.)
-    #  "simultaneous": matches the CBIC production/verification data — the bulk
-    #                  is cooled CONTINUOUSLY (cold air) while ONLY the top
-    #                  surface is locally reheated at the same time.  The reheat
-    #                  window overlaps the tail of the cooling schedule (no
-    #                  appended block), so the cycle is shorter and the core
-    #                  keeps solidifying while the skin stays soft → the top
-    #                  surface ヒケ is suppressed without slowing the bulk.
+    #  "sequential"  : classic — cool the whole bulk, THEN switch the entire
+    #                  environment to hot air for a reheat block, then final cool.
+    #  "simultaneous": bulk cooled CONTINUOUSLY while ONLY the top surface is
+    #                  reheated concurrently (one window from the start).
+    #  "pulsed"      : matches the CBIC production line — the top surface is
+    #                  reheated in N short TOGGLED bursts (e.g. 5 × 20 s at
+    #                  100°C) across the early solidification window, re-melting
+    #                  the skin each time so the sink mark never sets, while the
+    #                  bulk cools continuously.
+    # melt        : material melting point (°C) → mushy band via melt_band().
+    # late_cool_T : ambient the FINAL-cool phase relaxes toward (client drops
+    #               the line to ~16°C below room temperature late in the cycle).
     mode   = str(reheat.get("mode","sequential")).lower()
     t_cool  = sum(z["duration"] for z in zones)
     t_reh   = float(reheat["duration"])
+    n_pulse = int(reheat.get("pulses",0) or 0)
+    pulse_s = float(reheat.get("pulse_sec",0) or 0.0)
+    pulsed  = (mode == "pulsed") and n_pulse > 0 and pulse_s > 0.0
     simul   = (mode == "simultaneous") and t_reh > 0.0
+    surf_reheat = simul or pulsed        # bulk cools; surface reheated concurrently
+    t_sol,t_liq,t_mid = melt_band(melt)
+    late_T  = float(T_ROOM if late_cool_T is None else late_cool_T)
 
-    # Zone boundaries (the core cooling schedule — identical for both modes)
+    # Zone boundaries (the core cooling schedule — identical for all modes)
     zb=[]; ta=0.0
     for z in zones:
         zb.append((ta,ta+z["duration"],z["T"]))
         ta+=z["duration"]
 
-    if simul:
-        # Surface reheat runs concurrently from the START of cooling; the bulk
-        # never sees hot air. This holds the top skin soft through the early
-        # solidification window, so the surface solidifies LATER — while it is
-        # warmer than the already-cooled core (inverted gradient → no skin is
-        # pulled over a liquid pocket → sink mark suppressed). No separate
-        # reheat block → shorter total cycle.
-        t_reh_eff = min(t_reh, t_cool)
-        reh_s = 0.0
-        reh_e = t_reh_eff
+    # Pulse window: N bursts of pulse_s seconds spread across the early cooling.
+    pulse_win = float(min(reheat.get("pulse_window",6.0), t_cool)) if pulsed else 0.0
+    def _surf_hot(tm):
+        if simul:  return reh_s <= tm < reh_e
+        if pulsed:
+            if tm >= pulse_win: return False
+            slot = pulse_win/max(n_pulse,1)
+            k = int(tm//slot)
+            return (tm - k*slot) < (pulse_s/60.0)
+        return False
+
+    if surf_reheat:
+        # Surface reheat runs concurrently with cooling; the bulk never sees hot
+        # air, so it keeps solidifying while the skin is held soft → the surface
+        # sets LATER, warmer than the already-cooled core (inverted gradient →
+        # no skin pulled over a liquid pocket → sink mark suppressed). No
+        # appended reheat block → shorter cycle.
+        if pulsed:
+            reh_s = 0.0; reh_e = pulse_win
+        else:
+            reh_s = 0.0; reh_e = min(t_reh, t_cool)
         t_fin = float(np.clip(30.0 - t_cool - 0.5, 2.0, 8.0))
         t_tot = t_cool + t_fin
     else:
@@ -420,10 +500,17 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
         t_fin = float(np.clip(30.0 - t_cool - t_reh - 0.5, 2.0, 8.0))
         t_tot = t_cool + t_reh + t_fin
 
+    # Pulsed bursts are short (~20 s); resolve them with enough time steps.
+    if pulsed:
+        n_pts = max(n_pts, int(t_tot/max(pulse_s/60.0/2.0,0.02)) + 1, 260)
     times   = np.linspace(0,t_tot,n_pts)
 
     tau_c = max(2.0, RHO*CP*R_M**2/(K_TH*(h_cool*R_M/K_TH+0.1)*10))/60.0
     tau_r = max(1.0, RHO*CP*R_M**2/(K_TH*(h_reheat*R_M/K_TH+0.1)*10))/60.0
+    # The top SKIN that forms the sink mark is a thin layer with small thermal
+    # mass, so it re-melts fast under hot air — use a short skin time constant
+    # while the surface is actively reheated (lets a ~20 s burst re-melt it).
+    tau_skin = 0.30
 
     def _zone_env(tm):
         env=float(T_ROOM)
@@ -437,15 +524,17 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
 
     for i in range(1,n_pts):
         tm=float(times[i]); dt=float(times[i]-times[i-1])
-        if simul:
-            # Core ALWAYS follows the cooling schedule (never reheated).
+        if surf_reheat:
+            # Core ALWAYS follows the cooling schedule (never reheated); the
+            # final phase relaxes toward the (possibly sub-room) late ambient.
             if tm <= t_cool:
                 env_core=_zone_env(tm); tau_core=tau_c; H_core=h_cool
             else:
-                env_core=float(T_ROOM); tau_core=tau_c*1.5; H_core=h_cool
-            # Surface: hot air only inside the concurrent window; else = core.
-            if reh_s <= tm < reh_e:
-                env_surf=float(reheat["T"]); tau_surf=tau_r; H_surf=h_reheat
+                env_core=late_T; tau_core=tau_c*1.5; H_core=h_cool
+            # Surface: hot air only during the reheat window / pulse bursts.
+            if _surf_hot(tm):
+                env_surf=float(reheat["T"])
+                tau_surf=(min(tau_r,tau_skin) if pulsed else tau_r); H_surf=h_reheat
             else:
                 env_surf=env_core; tau_surf=tau_core; H_surf=H_core
         else:
@@ -454,12 +543,12 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
             elif tm<reh_e:
                 env=float(reheat["T"]); tau=tau_r; H_surf=h_reheat
             else:
-                env=float(T_ROOM); tau=tau_c*1.5; H_surf=h_cool
+                env=late_T; tau=tau_c*1.5; H_surf=h_cool
             env_surf=env_core=env; tau_surf=tau_core=tau; H_core=H_surf
         H[i]=H_surf                     # DI uses the SURFACE Biot (top-face damage)
         Te[i]=env_surf
         Ts[i]=env_surf+(Ts[i-1]-env_surf)*np.exp(-dt/max(tau_surf,0.01))
-        Ts[i]=float(np.clip(Ts[i],T_ROOM-2,T_fill+2))
+        Ts[i]=float(np.clip(Ts[i],min(T_ROOM,late_T)-2,T_fill+2))
         lag=float(np.clip(1.0/(1.0+H_core*R_M/K_TH*0.5),0.3,0.9))
         Tc[i]=env_core+(Tc[i-1]-env_core)*np.exp(-dt/max(tau_core*(1+lag),0.01))
 
@@ -470,7 +559,7 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
         dt  = float(times[i]-times[i-1])
         T   = float(Ts[i]); Tc_ = float(Tc[i])
         Bi  = float(H[i])*R_M/K_TH
-        fl_v= lf(T); tm=float(times[i])
+        fl_v= lf(T, t_sol, t_liq, t_mid); tm=float(times[i])
         mw  = float(4*fl_v*(1-fl_v))          # bell: peaks at fl=0.5
         Bi_r= float(np.clip((Bi-0.15)/0.85,0,1))
         dT_d= max(0.0, float(T_fill)-float(Te[i]))
@@ -499,7 +588,7 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
         # 3.5x stronger during active reheat phase → allows DI→0 for T_reheat≥85°C
         # Plus an anti-sink bonus while the surface is held hotter than the core.
         hd     = max(0.0, T - 55.0) / 10.0
-        in_reh = (reh_s <= tm < reh_e and t_reh > 0)
+        in_reh = _surf_hot(tm) if surf_reheat else (reh_s <= tm < reh_e and t_reh > 0)
         k_heal = float(np.clip(hd * (3.5 if in_reh else 0.2) + 1.5 * inv_grad, 0.0, 2.5))
         # Analytical ODE integration — stable for any k_heal×dt value.
         # dDI/dt = k_form×(1−DI) − k_heal×DI
@@ -514,13 +603,22 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120):
         DI_arr[i] = DI
 
     dT_dt=np.gradient(Ts,times)
-    t_reheat_out = (reh_e - reh_s) if simul else t_reh
+    if pulsed:      t_reheat_out = n_pulse*pulse_s/60.0     # total surface-reheat on-time
+    elif simul:     t_reheat_out = reh_e - reh_s
+    else:           t_reheat_out = t_reh
+    _rmode = "pulsed" if pulsed else ("simultaneous" if simul else "sequential")
     return dict(times=times.tolist(),T_surf=Ts.tolist(),T_core=Tc.tolist(),
                 T_env=Te.tolist(),dT=(Tc-Ts).tolist(),dTdt=dT_dt.tolist(),
                 DI=DI_arr.tolist(),T_fill=float(T_fill),
                 t_cool=t_cool,t_reheat=t_reheat_out,t_final=t_fin,t_total=t_tot,
                 reheat_start=reh_s,reheat_end=reh_e,reheat_T=float(reheat["T"]),
-                reheat_mode=("simultaneous" if simul else "sequential"),
+                reheat_mode=_rmode,
+                n_pulse=(n_pulse if pulsed else 0),
+                pulse_sec=(pulse_s if pulsed else 0.0),
+                pulse_window=(pulse_win if pulsed else 0.0),
+                melt=(float(melt) if melt is not None else t_mid),
+                late_cool_T=late_T,
+                mushy=(t_sol,t_liq),
                 zones=zones)
 
 # ── Peridynamic crack helpers (module-level — used by both fig_belt and main) ──
@@ -667,9 +765,14 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
     t_cool=float(ts["t_cool"]); t_reh=float(ts["t_reheat"])
     t_tot=float(ts["t_total"]); t_fin=float(ts["t_final"])
     reh_s=float(ts["reheat_start"]); reh_e=float(ts["reheat_end"])
-    # Simultaneous mode: reheat is applied to the TOP surface concurrently with
-    # bulk cooling (no separate reheat leg on the return lane).
-    simul=(ts.get("reheat_mode")=="simultaneous" and t_reh>0)
+    # Concurrent surface reheat (simultaneous OR pulsed): reheat is applied to
+    # the TOP surface while the bulk keeps cooling (no separate reheat leg).
+    _rmode=ts.get("reheat_mode")
+    simul=(_rmode=="simultaneous" and t_reh>0)
+    pulsed=(_rmode=="pulsed" and int(ts.get("n_pulse",0))>0)
+    surf=simul or pulsed
+    n_pulse=int(ts.get("n_pulse",0)); pulse_sec=float(ts.get("pulse_sec",0))
+    pulse_win=float(ts.get("pulse_window",0.0)) or reh_e
 
     static=[]
     # TOP LANE — cooling zones
@@ -690,34 +793,58 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
             showlegend=False,hoverinfo="skip"))
         x_acc+=xw
 
-    if simul:
-        # ── SIMULTANEOUS ── The top surface is reheated CONCURRENTLY with the
-        # bulk cooling, so there is no separate reheat leg. Draw the reheat as a
-        # glowing hot slab hovering ABOVE the cooling zones (over the window's
-        # x-range) with downward airflow onto the top surface; the whole return
-        # lane is just final cooling.
+    if surf:
+        # ── CONCURRENT SURFACE REHEAT (simultaneous or pulsed) ── The top
+        # surface is reheated while the bulk keeps cooling → no separate reheat
+        # leg. Reheat is drawn as glowing hot slab(s) hovering ABOVE the cooling
+        # zones with downward air-jets onto the top surface; return lane = final.
         xrs=L_COOL                                   # no reheat block on bottom lane
-        xr_top=(reh_e/max(t_cool,0.01))*L_COOL       # reheat window x-extent on top lane
         z_slab=H_S+2.2
-        rh_lbl=f"🔥 Top-surface reheat (concurrent)<br>{reheat['T']:.0f}°C / {t_reh:.0f}min ∥ cooling"
-        static.append(go.Mesh3d(
-            x=[0,xr_top,xr_top,0,0,xr_top,xr_top,0],
-            y=[LANE_TOP-BELT_W]*4+[LANE_TOP+BELT_W]*4,
-            z=[z_slab]*8,i=[0,4,0,2],j=[1,5,2,6],k=[3,7,3,7],
-            color="rgba(255,140,0,0.80)",opacity=0.55,flatshading=True,
-            name=rh_lbl.replace("<br>"," "),hovertemplate=rh_lbl+"<extra></extra>"))
-        static.append(go.Scatter3d(x=[xr_top*0.5],y=[LANE_TOP],z=[z_slab+0.8],
-            mode="text",text=[rh_lbl],textfont=dict(size=8,color="#ffd9a8"),
-            showlegend=False,hoverinfo="skip"))
-        # Downward hot-air jets from the slab onto the top surface of the belt
-        for fx in np.linspace(0.12,0.88,5):
-            axx=xr_top*float(fx)
-            for ya in [LANE_TOP-1,LANE_TOP,LANE_TOP+1]:
-                static.append(go.Scatter3d(x=[axx,axx],y=[ya,ya],z=[z_slab-0.2,H_S+0.15],
-                    mode="lines",line=dict(color="#ff8c00",width=3),
-                    showlegend=False,hoverinfo="skip"))
+        if pulsed:
+            # N discrete bursts spread across the pulse window (toggled reheat).
+            win_x=(pulse_win/max(t_cool,0.01))*L_COOL
+            slot=win_x/max(n_pulse,1)
+            burst_w=slot*min(1.0, max(0.25,(pulse_sec/60.0)/max(pulse_win/max(n_pulse,1),1e-6)))
+            rh_lbl=(f"🔥 Pulsed top reheat<br>{n_pulse}×{int(pulse_sec)}s @ "
+                    f"{reheat['T']:.0f}°C ∥ cooling")
+            for k in range(n_pulse):
+                bx0=k*slot; bx1=bx0+burst_w
+                static.append(go.Mesh3d(
+                    x=[bx0,bx1,bx1,bx0,bx0,bx1,bx1,bx0],
+                    y=[LANE_TOP-BELT_W]*4+[LANE_TOP+BELT_W]*4,
+                    z=[z_slab]*8,i=[0,4,0,2],j=[1,5,2,6],k=[3,7,3,7],
+                    color="rgba(255,110,0,0.90)",opacity=0.6,flatshading=True,
+                    name=rh_lbl.replace("<br>"," "),
+                    hovertemplate=f"Burst {k+1}/{n_pulse} · {int(pulse_sec)}s @ {reheat['T']:.0f}°C<extra></extra>"))
+                bxm=(bx0+bx1)/2
+                for ya in [LANE_TOP-1,LANE_TOP,LANE_TOP+1]:
+                    static.append(go.Scatter3d(x=[bxm,bxm],y=[ya,ya],z=[z_slab-0.2,H_S+0.15],
+                        mode="lines",line=dict(color="#ff6a00",width=4),
+                        showlegend=False,hoverinfo="skip"))
+            static.append(go.Scatter3d(x=[win_x*0.5],y=[LANE_TOP],z=[z_slab+0.9],
+                mode="text",text=[rh_lbl],textfont=dict(size=8,color="#ffd9a8"),
+                showlegend=False,hoverinfo="skip"))
+        else:
+            xr_top=(reh_e/max(t_cool,0.01))*L_COOL   # reheat window x-extent
+            rh_lbl=f"🔥 Top-surface reheat (concurrent)<br>{reheat['T']:.0f}°C / {t_reh:.0f}min ∥ cooling"
+            static.append(go.Mesh3d(
+                x=[0,xr_top,xr_top,0,0,xr_top,xr_top,0],
+                y=[LANE_TOP-BELT_W]*4+[LANE_TOP+BELT_W]*4,
+                z=[z_slab]*8,i=[0,4,0,2],j=[1,5,2,6],k=[3,7,3,7],
+                color="rgba(255,140,0,0.80)",opacity=0.55,flatshading=True,
+                name=rh_lbl.replace("<br>"," "),hovertemplate=rh_lbl+"<extra></extra>"))
+            static.append(go.Scatter3d(x=[xr_top*0.5],y=[LANE_TOP],z=[z_slab+0.8],
+                mode="text",text=[rh_lbl],textfont=dict(size=8,color="#ffd9a8"),
+                showlegend=False,hoverinfo="skip"))
+            for fx in np.linspace(0.12,0.88,5):
+                axx=xr_top*float(fx)
+                for ya in [LANE_TOP-1,LANE_TOP,LANE_TOP+1]:
+                    static.append(go.Scatter3d(x=[axx,axx],y=[ya,ya],z=[z_slab-0.2,H_S+0.15],
+                        mode="lines",line=dict(color="#ff8c00",width=3),
+                        showlegend=False,hoverinfo="skip"))
         # BOTTOM (return) LANE — final cooling only
-        fin_lbl="Final Cool<br>→ Room ~23°C"
+        _late=float(ts.get("late_cool_T",23.0))
+        fin_lbl=f"Final Cool<br>→ {_late:.0f}°C"
         static.append(go.Mesh3d(
             x=[0,L_COOL,L_COOL,0,0,L_COOL,L_COOL,0],
             y=[LANE_BOT-BELT_W]*4+[LANE_BOT+BELT_W]*4,
@@ -725,7 +852,7 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
             color="rgba(40,130,200,0.55)",opacity=0.65,flatshading=True,
             name=fin_lbl.replace("<br>"," "),hovertemplate=fin_lbl+"<extra></extra>"))
         static.append(go.Scatter3d(x=[L_COOL*0.5],y=[LANE_BOT],z=[0.5],
-            mode="text",text=["Final cool → Room 23°C"],textfont=dict(size=8,color="white"),
+            mode="text",text=[f"Final cool → {_late:.0f}°C"],textfont=dict(size=8,color="white"),
             showlegend=False,hoverinfo="skip"))
     else:
         # ── SEQUENTIAL ── reheat is a distinct leg on the return lane, then final.
@@ -769,9 +896,9 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
         mode="lines",line=dict(color="#ccc",width=3),
         showlegend=False,hoverinfo="skip"))
 
-    # Airflow arrows above the reheat (sequential only — the simultaneous jets
+    # Airflow arrows above the reheat (sequential only — the concurrent jets
     # are already drawn onto the top lane above).
-    if not simul:
+    if not surf:
         ax_x=(xrs+L_COOL)/2 if t_reh>0 else L_COOL*0.5
         for ya in [LANE_BOT-1,LANE_BOT,LANE_BOT+1]:
             static.append(go.Scatter3d(x=[ax_x,ax_x],y=[ya,ya],z=[H_S+2.5,H_S+0.2],
@@ -803,7 +930,7 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
 
     def stick_pos(frac_t):
         fc=t_cool/max(t_tot,0.01)
-        if simul:
+        if surf:
             # No separate reheat leg: cooling on the top lane, then final cool
             # on the return lane (reheat happens concurrently on the top lane).
             if frac_t<=fc:
@@ -927,7 +1054,7 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
                        backgroundcolor="rgba(8,18,36,0.5)"),
             yaxis=dict(title=dict(text="Lane",font=dict(size=11,color="#9fb4d4")),
                        tickfont=dict(size=9,color="#6b82a8"),gridcolor="#10233f",
-                       ticktext=(["← Final cool","","Cooling + top reheat →"] if simul
+                       ticktext=(["← Final cool","","Cooling + top reheat →"] if surf
                                  else ["← Reheat / Final","","Cooling →"]),
                        tickvals=[LANE_BOT,0,LANE_TOP],
                        zerolinecolor="#10233f",showbackground=True,
@@ -949,7 +1076,9 @@ def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
                     xanchor="left",yanchor="top"),
         # Title centred at the very top; Play/Pause as a compact HORIZONTAL
         # group pinned top-left BELOW the title band so they never overlap it.
-        title=dict(text=((f"<b>U-Turn Conveyor</b>  ·  {len(zones)} zones + 🔥 concurrent top reheat → Final  "
+        title=dict(text=((f"<b>U-Turn Conveyor</b>  ·  {len(zones)} zones + 🔥 {n_pulse}×{int(pulse_sec)}s pulsed top reheat → Final  "
+                          f"·  Bi={Bi:.3f}  ·  {t_tot:.0f} min") if pulsed else
+                         (f"<b>U-Turn Conveyor</b>  ·  {len(zones)} zones + 🔥 concurrent top reheat → Final  "
                           f"·  Bi={Bi:.3f}  ·  {t_tot:.0f} min") if simul else
                          (f"<b>U-Turn Conveyor</b>  ·  {len(zones)} zones → 🔥 Reheat → Final  "
                           f"·  Bi={Bi:.3f}  ·  {t_tot:.0f} min")),
@@ -1013,13 +1142,14 @@ def fig_charts(ts,label=""):
             row=1,col=1,annotation_text="Final↓",
             annotation_font=dict(size=9,color="#3498db"))
 
-    # Mushy band
-    fig.add_hrect(y0=T_SOL_C,y1=T_LIQ_C,fillcolor="rgba(255,165,0,0.14)",
-        row=1,col=1,annotation_text="Mushy 62–72°C",
+    # Mushy band — from the material melting point (ts["mushy"] = solidus,liquidus)
+    _msol,_mliq = ts.get("mushy",(T_SOL_C,T_LIQ_C))
+    fig.add_hrect(y0=_msol,y1=_mliq,fillcolor="rgba(255,165,0,0.14)",
+        row=1,col=1,annotation_text=f"Mushy {_msol:.0f}–{_mliq:.0f}°C",
         annotation_font=dict(size=10,color="darkorange"),
         annotation_position="top right")
-    fig.add_hline(y=T_SOL_C,line_dash="dot",line_color="orange",line_width=1,row=1,col=1)
-    fig.add_hline(y=T_LIQ_C,line_dash="dot",line_color="#e74c3c",line_width=1,row=1,col=1)
+    fig.add_hline(y=_msol,line_dash="dot",line_color="orange",line_width=1,row=1,col=1)
+    fig.add_hline(y=_mliq,line_dash="dot",line_color="#e74c3c",line_width=1,row=1,col=1)
     fig.add_hline(y=T_TARGET,line_dash="dot",line_color="#2980b9",line_width=1,row=1,col=1,
         annotation_text=f"Target {T_TARGET:.0f}°C",
         annotation_font=dict(size=9,color="#2980b9"))
@@ -1231,6 +1361,8 @@ def sidebar():
         st.session_state.h_cool   = sc["h_cool"]
         st.session_state.h_reheat = sc.get("h_reheat", 12.0)
         st.session_state.T_fill   = sc.get("T_fill", 80.0)
+        st.session_state.melt     = sc.get("melt", 67.0)
+        st.session_state.late_cool_T = sc.get("late_cool_T", 23.0)
         st.session_state.last_sc  = sc_name
         # Bump zone_version so widget keys change → stale widget values are discarded
         st.session_state.zone_version = st.session_state.get("zone_version", 0) + 1
@@ -1242,6 +1374,8 @@ def sidebar():
         st.session_state.h_cool=sc["h_cool"]
         st.session_state.h_reheat=sc.get("h_reheat",12.0)
         st.session_state.T_fill=sc.get("T_fill",80.0)
+        st.session_state.melt=sc.get("melt",67.0)
+        st.session_state.late_cool_T=sc.get("late_cool_T",23.0)
         st.session_state.last_sc=sc_name
         st.session_state.zone_version=st.session_state.get("zone_version",0)+1
         st.rerun()
@@ -1296,27 +1430,50 @@ def sidebar():
     # Reheat timing mode — sequential (after cooling) vs simultaneous
     # (surface-only reheat concurrent with continuous bulk cooling; matches
     #  the CBIC verification/production data).
-    _mode_opts = [t("reheat_seq"), t("reheat_sim")]
+    _mode_opts = [t("reheat_seq"), t("reheat_sim"), t("reheat_pulsed")]
     _cur_mode  = reh.get("mode","sequential")
-    _mode_idx  = 1 if _cur_mode == "simultaneous" else 0
+    _mode_idx  = {"sequential":0,"simultaneous":1,"pulsed":2}.get(_cur_mode,0)
     _mode_sel  = st.sidebar.radio(t("reheat_mode"), _mode_opts, index=_mode_idx,
         help=t("reheat_mode_help"))
-    reh["mode"] = "simultaneous" if _mode_sel == t("reheat_sim") else "sequential"
-    _simul = reh["mode"] == "simultaneous"
+    reh["mode"] = ("pulsed" if _mode_sel==t("reheat_pulsed")
+                   else "simultaneous" if _mode_sel==t("reheat_sim") else "sequential")
+    _simul  = reh["mode"]=="simultaneous"
+    _pulsed = reh["mode"]=="pulsed"
 
     reh["T"]=float(st.sidebar.slider("T_reheat (°C)",40.0,120.0,float(reh.get("T",70.0)),1.0,
-        help="Client unknown → DRL optimises. ≥62°C enters mushy zone."))
-    reh["duration"]=float(st.sidebar.slider(
-        t("reheat_window") if _simul else "Reheat duration (min)",0.0,15.0,
-        float(reh.get("duration",10.0)),0.5,
-        help=(t("reheat_window_help") if _simul else "Client target ~10 min")))
+        help="Hot-air / surface reheat temperature."))
+    if _pulsed:
+        # Toggled surface reheat (CBIC production line): N short hot-air bursts.
+        reh["pulses"]=int(st.sidebar.slider(t("pulse_count"),1,10,
+            int(reh.get("pulses",5)),1,help=t("pulse_count_help")))
+        reh["pulse_sec"]=int(st.sidebar.slider(t("pulse_dur"),5,60,
+            int(reh.get("pulse_sec",20)),5,help=t("pulse_dur_help")))
+        reh["pulse_window"]=float(st.sidebar.slider(t("pulse_win"),2.0,15.0,
+            float(reh.get("pulse_window",6.0)),0.5,help=t("pulse_win_help")))
+        reh["duration"]=0.0
+        _on=reh["pulses"]*reh["pulse_sec"]/60.0
+        st.sidebar.caption(t("pulse_note").format(n=reh["pulses"],s=int(reh["pulse_sec"]),on=_on))
+    else:
+        reh["duration"]=float(st.sidebar.slider(
+            t("reheat_window") if _simul else "Reheat duration (min)",0.0,15.0,
+            float(reh.get("duration",10.0)),0.5,
+            help=(t("reheat_window_help") if _simul else "Client target ~10 min")))
+        if reh["duration"]>0:
+            tau_r=3.0; T_reach=reh["T"]-(reh["T"]-T_last)*np.exp(-reh["duration"]/tau_r)
+            flag="✅ above solidus → healing" if T_reach>=T_SOL_C else "⚠️ below solidus → softening only"
+            st.sidebar.caption(f"Surface reaches ~{T_reach:.0f}°C | {flag}")
+        if _simul:
+            st.sidebar.caption(t("reheat_sim_note"))
 
-    if reh["duration"]>0:
-        tau_r=3.0; T_reach=reh["T"]-(reh["T"]-T_last)*np.exp(-reh["duration"]/tau_r)
-        flag="✅ above solidus → healing" if T_reach>=T_SOL_C else "⚠️ below solidus → softening only"
-        st.sidebar.caption(f"Surface reaches ~{T_reach:.0f}°C | {flag}")
-    if _simul:
-        st.sidebar.caption(t("reheat_sim_note"))
+    # ── Material & ambient ───────────────────────────────────────────────────
+    _sh("🧪", t("material_ambient"))
+    melt=float(st.sidebar.slider(t("melting_point"),40.0,100.0,
+        float(st.session_state.get("melt",67.0)),1.0,help=t("melting_point_help")))
+    st.session_state.melt=melt
+    st.sidebar.caption(t("mushy_note").format(lo=melt-5,hi=melt+5))
+    late_cool_T=float(st.sidebar.slider(t("late_cool"),5.0,30.0,
+        float(st.session_state.get("late_cool_T",23.0)),1.0,help=t("late_cool_help")))
+    st.session_state.late_cool_T=late_cool_T
 
     _sh("⚡", t("convection"))
     h_cool=float(st.sidebar.slider("h_cool (W/m²K)",2.0,20.0,
@@ -1340,23 +1497,36 @@ def sidebar():
     _sh("🤖", t("drl_optimiser"))
     st.sidebar.caption(t("drl_help"))
     if st.sidebar.button("⚡ Run DRL Optimise", type="primary", width='stretch'):
-        with st.spinner("DRL optimising zone schedule + reheat (both timings)..."):
+        with st.spinner("DRL optimising zone schedule + reheat (all 3 timings)..."):
             T_fill_drl=T_fill; reh_dur=10.0
-            # Optimise the schedule for BOTH reheat timings independently, so we
-            # can report each option's best result. The applied result uses the
+            # Optimise the schedule for ALL THREE reheat timings independently,
+            # so we can report each option's best. The applied result uses the
             # timing currently selected on the radio — the DRL run never flips
             # the user's radio choice.
             best={"sequential":{"score":float("inf")},
-                  "simultaneous":{"score":float("inf")}}
-            for mode in ("sequential","simultaneous"):
-                # Simultaneous reheat overlaps cooling → it adds NO time to the
-                # 30-min budget, so more cooling budget is available.
-                cool_budget = (30.0-3.0) if mode=="simultaneous" else (30.0-reh_dur-3.0)
-                for T_reh in [65,72,78,85,92,100,110]:
-                    for h_reh_t in [12.0,18.0,25.0]:
+                  "simultaneous":{"score":float("inf")},
+                  "pulsed":{"score":float("inf")}}
+            def _reh_grid(mode):
+                if mode=="pulsed":     # toggled bursts — lean grid (pulses/T/window)
+                    for T_reh in (95.0,105.0):
+                        for npul in (3,5,7):
+                            for win in (5.0,):
+                                yield {"T":T_reh,"duration":0.0,"mode":"pulsed",
+                                       "pulses":npul,"pulse_sec":20,"pulse_window":win}
+                else:
+                    for T_reh in (65.0,72.0,78.0,85.0,92.0,100.0,110.0):
+                        yield {"T":T_reh,"duration":reh_dur,"mode":mode}
+            for mode in ("sequential","simultaneous","pulsed"):
+                overlap = mode in ("simultaneous","pulsed")   # reheat overlaps cooling
+                cool_budget = (30.0-3.0) if overlap else (30.0-reh_dur-3.0)
+                _hr_grid = [18.0,25.0] if mode=="pulsed" else [12.0,18.0,25.0]
+                _nz_grid = [3,4] if mode=="pulsed" else [3,4,5]
+                _dist_grid = ["mushy_dwell","top_heavy"] if mode=="pulsed" else ["mushy_dwell","linear","top_heavy"]
+                for reh_base in _reh_grid(mode):
+                    for h_reh_t in _hr_grid:
                         for h_cool_t in [h_cool, max(2.0,h_cool*0.6)]:
-                            for nz in [3,4,5]:
-                                for dist in ["mushy_dwell","linear","top_heavy"]:
+                            for nz in _nz_grid:
+                                for dist in _dist_grid:
                                     if dist=="linear":
                                         step=(T_fill_drl-T_TARGET)/nz
                                         temps=[T_fill_drl-(k+1)*step for k in range(nz)]
@@ -1370,13 +1540,13 @@ def sidebar():
                                         raw=[6.0 if 55<=T<=75 else 3.0 for T in temps]
                                         s=cool_budget/sum(raw); durs=[d*s for d in raw]
                                     t_c=sum(durs)
-                                    # Final cool from budget (reheat overlaps in simul mode)
-                                    t_f=(30.0-t_c) if mode=="simultaneous" else (30.0-t_c-reh_dur)
+                                    t_f=(30.0-t_c) if overlap else (30.0-t_c-reh_dur)
                                     if t_f<1.5: continue  # skip infeasible
                                     tz=[{"T":round(T,1),"duration":round(d,1),"label":f"Zone {k+1}"} for k,(T,d) in enumerate(zip(temps,durs))]
-                                    reh_t={"T":float(T_reh),"duration":reh_dur,"mode":mode}
+                                    reh_t=dict(reh_base)
                                     try:
-                                        tt=build_timeline(T_fill_drl,tz,reh_t,h_cool_t,h_reh_t,n_pts=80)
+                                        tt=build_timeline(T_fill_drl,tz,reh_t,h_cool_t,h_reh_t,
+                                                          n_pts=80,melt=melt,late_cool_T=late_cool_T)
                                         if tt["t_total"]>30.5: continue  # hard reject
                                         DI_pk=max(tt["DI"]); DI_fin=float(tt["DI"][-1])
                                         score=0.6*DI_pk+0.4*DI_fin
@@ -1387,18 +1557,17 @@ def sidebar():
                                     except: pass
 
             # Apply the optimum for the CURRENTLY selected timing (keeps the
-            # radio where the user left it). Fall back to the other timing only
-            # if the current one found nothing feasible.
+            # radio put). Fall back to any timing that found a solution otherwise.
             _cur=reh.get("mode","sequential")
             apply=best[_cur] if best[_cur].get("zones") else None
             if apply is None:
-                other="simultaneous" if _cur=="sequential" else "sequential"
-                if best[other].get("zones"):
-                    apply=best[other]; _cur=other
+                for other in ("simultaneous","pulsed","sequential"):
+                    if best[other].get("zones"): apply=best[other]; _cur=other; break
             if apply and apply.get("zones"):
                 best_z=apply["zones"]; best_r=apply["reh"]
                 best_h_reh=apply["h_reh"]; best_h_cool=apply["h_cool"]
-                tt_opt=build_timeline(T_fill_drl,best_z,best_r,best_h_cool,best_h_reh,n_pts=120)
+                tt_opt=build_timeline(T_fill_drl,best_z,best_r,best_h_cool,best_h_reh,
+                                      n_pts=120,melt=melt,late_cool_T=late_cool_T)
                 st.session_state.zones=   [dict(z) for z in best_z]
                 st.session_state.reheat=  dict(best_r)   # mode=_cur → radio stays put
                 st.session_state.h_reheat=best_h_reh
@@ -1411,21 +1580,23 @@ def sidebar():
                 st.session_state.drl_zones=[dict(z) for z in best_z]
                 st.session_state.drl_reh= dict(best_r)
                 DI_pk=max(tt_opt["DI"])
+                _lbl={"sequential":"Sequential","simultaneous":"Simultaneous","pulsed":"Pulsed"}
                 def _opt_summ(m):
                     b=best[m]
                     if not b.get("zones"): return "n/a"
-                    return f"{b['ttot']:.0f}min · DI={b['di']:.3f} [{_rlbl(b['di'])}]"
+                    return f"{b['ttot']:.0f}min·DI={b['di']:.3f}[{_rlbl(b['di'])}]"
                 st.sidebar.success(
-                    f"✓ Applied [{'Simultaneous' if _cur=='simultaneous' else 'Sequential'}]: "
+                    f"✓ Applied [{_lbl[_cur]}]: "
                     f"DI_peak={DI_pk:.3f} [{_rlbl(DI_pk)}] | {tt_opt['t_total']:.0f}min")
                 st.sidebar.caption(
-                    f"Both options optimised — Sequential: {_opt_summ('sequential')} · "
-                    f"Simultaneous: {_opt_summ('simultaneous')}. "
-                    f"Switch ‘Reheat timing’ to apply the other.")
+                    f"All options — Seq: {_opt_summ('sequential')} · "
+                    f"Sim: {_opt_summ('simultaneous')} · Pulsed: {_opt_summ('pulsed')}. "
+                    f"Switch ‘Reheat timing’ to apply another.")
                 st.rerun()
 
     return dict(T_fill=T_fill, zones=zones, reheat=reh,
                 h_cool=h_cool, h_reheat=h_reh,
+                melt=melt, late_cool_T=late_cool_T,
                 _scenario=sc_name)
 
 # ── Results Tab ────────────────────────────────────────────────────────────
@@ -1824,14 +1995,18 @@ def main():
         "T_fill": params["T_fill"],
         "zones":  [(z["T"],z["duration"]) for z in params["zones"]],
         "reheat": (params["reheat"]["T"], params["reheat"]["duration"],
-                   params["reheat"].get("mode","sequential")),
+                   params["reheat"].get("mode","sequential"),
+                   params["reheat"].get("pulses",0), params["reheat"].get("pulse_sec",0),
+                   params["reheat"].get("pulse_window",0)),
         "h_cool": params["h_cool"], "h_reheat": params["h_reheat"],
+        "melt": params.get("melt"), "late": params.get("late_cool_T"),
     }, sort_keys=True)
     _hash = hashlib.md5(_hs.encode()).hexdigest()[:8]
     if _hash != st.session_state.last_param_hash:
         with st.spinner(""):
             _ts = build_timeline(params["T_fill"],params["zones"],params["reheat"],
-                                 params["h_cool"],params["h_reheat"],n_pts=120)
+                                 params["h_cool"],params["h_reheat"],n_pts=120,
+                                 melt=params.get("melt"),late_cool_T=params.get("late_cool_T"))
             st.session_state.sim_ts=_ts; st.session_state.sim_done=True
             st.session_state.last_param_hash=_hash
 
@@ -1969,7 +2144,8 @@ def main():
     if run_sim:
         with st.spinner("Simulating..."):
             _ts2 = build_timeline(params["T_fill"],params["zones"],params["reheat"],
-                                  params["h_cool"],params["h_reheat"],n_pts=120)
+                                  params["h_cool"],params["h_reheat"],n_pts=120,
+                                  melt=params.get("melt"),late_cool_T=params.get("late_cool_T"))
             st.session_state.sim_ts=_ts2; st.session_state.sim_done=True
             st.session_state.last_param_hash=_hash
         st.rerun()
@@ -1985,7 +2161,8 @@ def main():
     # ══ TAB 1: Belt ════════════════════════════════════════════════════════════
     with tab1:
         ts_b = ats if ats else build_timeline(params["T_fill"],params["zones"],
-            params["reheat"],params["h_cool"],params["h_reheat"],n_pts=60)
+            params["reheat"],params["h_cool"],params["h_reheat"],n_pts=60,
+            melt=params.get("melt"),late_cool_T=params.get("late_cool_T"))
         belt = fig_belt(ts_b,params["zones"],params["reheat"],
                         params["h_cool"],params["h_reheat"],n_frames=40)
         # Stable key + figure uirevision => camera rotation/zoom is preserved
@@ -2027,7 +2204,8 @@ def main():
         else:
             with st.spinner("Preview..."):
                 ts_use=build_timeline(params["T_fill"],params["zones"],params["reheat"],
-                                      params["h_cool"],params["h_reheat"],n_pts=120)
+                                      params["h_cool"],params["h_reheat"],n_pts=120,
+                                      melt=params.get("melt"),late_cool_T=params.get("late_cool_T"))
             lbl_use="Preview"
         charts=fig_charts(ts_use,lbl_use)
         st.plotly_chart(charts,width='stretch')
