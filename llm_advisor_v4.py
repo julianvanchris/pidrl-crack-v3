@@ -132,16 +132,22 @@ class OllamaClient:
     def __init__(self, base_url: str = OLLAMA_URL):
         self.base_url  = base_url.rstrip("/")
         self._alive    = None       # cached liveness
+        self._alive_t  = 0.0        # when it was last checked
         self._warm_models = set()   # models confirmed loaded in this session
 
     def is_alive(self) -> bool:
         if not HAS_REQUESTS:
             return False
+        # status() runs on every rerun and a dead endpoint costs a full connect
+        # timeout (about 2 s on Windows), so reuse the answer for 30 s.
+        if self._alive is not None and time.time() - self._alive_t < 30:
+            return bool(self._alive)
         try:
             r = requests.get(f"{self.base_url}/api/tags", timeout=3)
             self._alive = r.status_code == 200
         except Exception:
             self._alive = False
+        self._alive_t = time.time()
         return bool(self._alive)
 
     def list_models(self) -> list:

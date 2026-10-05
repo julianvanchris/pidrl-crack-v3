@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 
 warnings.filterwarnings("ignore")
 
@@ -160,6 +161,49 @@ def melt_band(melt):
     melt=float(melt)
     return melt-5.0, melt+5.0, melt
 
+# ── Hot-air bursts (pulsed top reheat) ─────────────────────────────────────
+def even_bursts(n, sec, window):
+    """N bursts of `sec` seconds spread evenly over the first `window` minutes,
+    as [start_min, length_s] pairs."""
+    slot = float(window) / max(int(n), 1)
+    return [[round(k * slot, 3), int(sec)] for k in range(int(n))]
+
+def burst_spans(reheat, t_cool):
+    """Hot-air bursts as sorted (start, end) minutes inside the cooling lane:
+    the list placed by hand when there is one, otherwise the even pattern."""
+    b = reheat.get("bursts")
+    if not b:
+        n = int(reheat.get("pulses", 0) or 0); sec = float(reheat.get("pulse_sec", 0) or 0)
+        if n <= 0 or sec <= 0:
+            return []
+        b = even_bursts(n, sec, min(float(reheat.get("pulse_window", 6.0)), t_cool))
+    out = []
+    for s, d in b:
+        s = float(s); e = min(s + float(d) / 60.0, t_cool)
+        if float(d) > 0 and 0.0 <= s < t_cool and e > s:
+            out.append((s, e))
+    return sorted(out)
+
+def _next_burst(bursts, t_cool, sec=20):
+    """Start of one more burst: the pattern's spacing after the last burst, or
+    the middle of the widest gap when that would run past the cooling lane."""
+    st_ = sorted(float(s) for s, _ in bursts)
+    step = float(np.median(np.diff(st_))) if len(st_) > 1 else 1.2
+    s = st_[-1] + step if st_ else 0.0
+    if s + sec / 60.0 > t_cool:
+        edges = [0.0] + [x for b in sorted(bursts) for x in (float(b[0]), float(b[0]) + b[1] / 60.0)] + [t_cool]
+        gap, a = max((edges[i + 1] - edges[i], edges[i]) for i in range(0, len(edges) - 1, 2))
+        s = a + gap / 2 - sec / 120.0
+    return round(float(np.clip(s, 0.0, max(t_cool - sec / 60.0, 0.0))), 2)
+
+def _sync_pattern(reh):
+    """After a hand edit, move the even-pattern sliders to the closest match."""
+    b = reh.get("bursts") or []
+    if b:
+        reh["pulses"] = len(b)
+        reh["pulse_sec"] = int(np.clip(round(np.mean([d for _, d in b]) / 5) * 5, 5, 60))
+        reh["pulse_window"] = float(np.clip(round(max(s + d / 60.0 for s, d in b) * 2) / 2, 2.0, 15.0))
+
 def _rlbl(d):
     if d>=0.80: return "CRITICAL"
     if d>=0.50: return "WARNING"
@@ -239,8 +283,6 @@ TR = {
     "v_caution_hint": "Strengthen the top reheat, or try pulsed bursts in step 4.",
     "v_warning_hint": "Slow the first cooling zone and add top-surface reheat.",
     "v_critical_hint": "Redesign the zone schedule, or run Optimise in step 7.",
-    "rb_label": "Surface temperature through the cycle",
-    "rb_reheat": "Hot air on the top surface",
     "rb_final": "Final cooling", "rb_reheat_seg": "Reheat",
     "zone_n": "Zone {n}",
     "live_hint": "Results update as you change the setup on the left.",
@@ -258,10 +300,8 @@ TR = {
     "reheat_note_pul": "bursts at {T:.0f} °C",
     "reheat_off": "Off", "min": "min",
     # Tabs
-    "tab_belt": "Production line", "tab_temp": "Thermal history",
+"tab_temp": "Thermal history",
     "tab_crack": "Surface integrity", "tab_results": "Report", "tab_advisor": "Advisor",
-    "sf_belt": ("Follow one stick along the U-turn conveyor. Press Play or drag the "
-                "timeline; the colour of the stick is its temperature."),
     "sf_temp": ("Surface and core temperature over the cycle, with the damage index "
                 "below. Shaded bands mark hot air on the top surface."),
     "sf_crack": ("The stick at its most damaged moment and after reheat. Cracks are drawn "
@@ -332,15 +372,44 @@ TR = {
     "drl_na": "no feasible recipe",
     # Figures
     "play": "Play", "pause": "Pause", "time": "Time",
-    "belt_x": "Belt position, cm",
-    "lane_cool": "Cooling", "lane_cool_top": "Cooling and top reheat",
-    "lane_final": "Final cooling", "lane_reheat_final": "Reheat and final cooling",
-    "belt_frame": "{t:.1f} min, surface {Ts:.0f} °C, damage index {di:.3f}",
-    "belt_reheating": "Reheating",
-    "belt_hot_air": "Hot air {T:.0f} °C",
+    # Line studio (3D stage)
+    "ls_time_k": "Time in the cycle",
+    "ls_surface": "Surface", "ls_core": "Core", "ls_damage": "Damage index",
+    "ls_hot_on": "Hot air on the top surface", "ls_tunnel_on": "In the reheat tunnel",
+    "ls_hot_air": "Hot air {T} °C",
+    "ls_fill": "Filled", "ls_exit": "Exit",
+    "ls_burst": "Burst {n}, {s} min, {d} s",
+    "ls_burst_aria": "Burst {n} at {s} min, {d} s. Arrow keys move it, Delete removes it.",
+    "ls_add": "Add burst",
+    "ls_overview": "Overview", "ls_top": "Top", "ls_follow": "Follow",
+    "ls_views": "Camera view",
+    "ls_cycle": "{t} min cycle",
+    "ls_hint_edit": ("Drag a hot-air burst along the line or the track to retime it, drag its right "
+                     "edge to change its length, double-click to remove it. Drag the highlighted "
+                     "stick, or tap the belt, to follow one stick through the cycle. Ctrl + scroll zooms."),
+    "ls_hint_view": ("Drag the highlighted stick, tap the belt or scrub the track to follow one stick "
+                     "through the cycle. Drag empty space to turn the view; Ctrl + scroll zooms."),
+    "ls_nogl": "The 3D view needs WebGL. The track and read-out still work.",
+    "ls_canvas": "Production line in 3D. Sticks are coloured by temperature.",
+    "ls_slider": "Time in the cycle",
     "belt_bursts": "{n} bursts of {s} s at {T:.0f} °C",
-    "zone_plate": "{z}<br>{T:.0f} °C, {d:.0f} min",
-    "final_plate": "Final cooling<br>{T:.0f} °C",
+    # Burst editor (sidebar)
+    "burst_list": "Burst times ({n})",
+    "burst_at": "Burst {n}, min", "burst_len": "Seconds",
+    "remove_burst": "Remove burst {n}", "add_burst": "Add burst",
+    "even_pattern": "Even spacing",
+    "pattern_custom": ("Bursts placed by hand. Move a slider or press Even spacing to spread "
+                       "them evenly again."),
+    # Read-outs and tab heads
+    "ro_exit": "At the exit", "st_exit": "after {t:.0f} min",
+    "th_temp": "How the top surface cools",
+    "th_crack": "What the top surface looks like",
+    "th_report": "The recipe, checked",
+    "th_advisor": "Ask about this run",
+    "f_mushy": "Surface in the mushy band",
+    "f_gap": "Largest core to surface gap",
+    "f_rate": "Fastest surface cooling",
+    "f_at": "{t:.1f} min",
     "ch_temp": "Temperature", "ch_grad": "Core minus surface, and cooling rate",
     "ch_di": "Damage index",
     "tr_surface": "Surface", "tr_core": "Core", "tr_air": "Air setpoint",
@@ -432,8 +501,6 @@ TR = {
     "v_caution_hint": "上面の再加熱を強めるか、手順4でパルス加熱を試してください。",
     "v_warning_hint": "第1冷却ゾーンを緩やかにし、上面の再加熱を加えてください。",
     "v_critical_hint": "ゾーン構成を見直すか、手順7の最適化を実行してください。",
-    "rb_label": "サイクル中の表面温度",
-    "rb_reheat": "上面への熱風",
     "rb_final": "最終冷却", "rb_reheat_seg": "再加熱",
     "zone_n": "ゾーン{n}",
     "live_hint": "左側の設定を変えると、結果はすぐに更新されます。",
@@ -448,10 +515,8 @@ TR = {
     "reheat_note_seq": "冷却後", "reheat_note_sim": "冷却と同時",
     "reheat_note_pul": "{T:.0f} ℃ のバースト",
     "reheat_off": "なし", "min": "分",
-    "tab_belt": "生産ライン", "tab_temp": "温度履歴", "tab_crack": "表面品質",
+"tab_temp": "温度履歴", "tab_crack": "表面品質",
     "tab_results": "レポート", "tab_advisor": "アドバイザー",
-    "sf_belt": ("Uターンコンベア上の1本のスティックを追います。再生するか、タイムラインを"
-                "動かしてください。スティックの色は温度を表します。"),
     "sf_temp": ("サイクル中の表面と内部の温度、その下に損傷指数を示します。網掛けは上面に"
                 "熱風が当たっている時間です。"),
     "sf_crack": ("最も損傷が大きい時点と再加熱後のスティックです。亀裂は損傷指数が0.25に"
@@ -516,15 +581,43 @@ TR = {
     "mode_seq": "冷却後", "mode_sim": "冷却と同時", "mode_pul": "パルス加熱",
     "drl_na": "実行可能な条件なし",
     "play": "再生", "pause": "一時停止", "time": "時間",
-    "belt_x": "ベルト位置（cm）",
-    "lane_cool": "冷却", "lane_cool_top": "冷却と上面再加熱",
-    "lane_final": "最終冷却", "lane_reheat_final": "再加熱と最終冷却",
-    "belt_frame": "{t:.1f} 分、表面 {Ts:.0f} ℃、損傷指数 {di:.3f}",
-    "belt_reheating": "再加熱中",
-    "belt_hot_air": "熱風 {T:.0f} ℃",
-    "belt_bursts": "{T:.0f} ℃・{s}秒のバースト×{n}",
-    "zone_plate": "{z}<br>{T:.0f} ℃、{d:.0f} 分",
-    "final_plate": "最終冷却<br>{T:.0f} ℃",
+    # Line studio (3D stage)
+    "ls_time_k": "サイクル内の時間",
+    "ls_surface": "表面", "ls_core": "内部", "ls_damage": "損傷指数",
+    "ls_hot_on": "上面に熱風", "ls_tunnel_on": "再加熱トンネル内",
+    "ls_hot_air": "熱風 {T} ℃",
+    "ls_fill": "充填", "ls_exit": "出口",
+    "ls_burst": "バースト{n}：{s}分、{d}秒",
+    "ls_burst_aria": "バースト{n}：{s}分、{d}秒。矢印キーで移動、Deleteキーで削除。",
+    "ls_add": "バーストを追加",
+    "ls_overview": "全体", "ls_top": "上から", "ls_follow": "追従",
+    "ls_views": "カメラ",
+    "ls_cycle": "サイクル {t} 分",
+    "ls_hint_edit": ("熱風バーストはライン上またはトラック上でドラッグすると時刻を変更、右端のドラッグで長さを変更、"
+                     "ダブルクリックで削除できます。強調されたスティックをドラッグするかベルトをタップすると、"
+                     "1本のスティックをサイクルに沿って追えます。Ctrl＋スクロールで拡大縮小。"),
+    "ls_hint_view": ("強調されたスティックをドラッグ、ベルトをタップ、またはトラックをなぞると、1本のスティックを"
+                     "サイクルに沿って追えます。空いた所をドラッグすると視点が回転、Ctrl＋スクロールで拡大縮小。"),
+    "ls_nogl": "3D表示にはWebGLが必要です。トラックと読み取り値は使用できます。",
+    "ls_canvas": "生産ラインの3D表示。スティックは温度で色分けされています。",
+    "ls_slider": "サイクル内の時間",
+    "belt_bursts": "{T:.0f} ℃のバースト{s}秒×{n}回",
+    # Burst editor (sidebar)
+    "burst_list": "バーストの時刻（{n}回）",
+    "burst_at": "バースト{n}（分）", "burst_len": "秒",
+    "remove_burst": "バースト{n}を削除", "add_burst": "バーストを追加",
+    "even_pattern": "等間隔に戻す",
+    "pattern_custom": "バーストは手動で配置されています。スライダーを動かすか「等間隔に戻す」で均等に戻せます。",
+    # Read-outs and tab heads
+    "ro_exit": "出口での表面", "st_exit": "{t:.0f}分後",
+    "th_temp": "上面の冷え方",
+    "th_crack": "上面の仕上がり",
+    "th_report": "条件の確認",
+    "th_advisor": "この結果について質問",
+    "f_mushy": "表面が半溶融域にある時間",
+    "f_gap": "内部と表面の最大温度差",
+    "f_rate": "表面の最大冷却速度",
+    "f_at": "{t:.1f}分",
     "ch_temp": "温度", "ch_grad": "内部と表面の温度差、冷却速度", "ch_di": "損傷指数",
     "tr_surface": "表面", "tr_core": "内部", "tr_air": "空気設定値",
     "tr_dT": "内部−表面", "tr_rate": "冷却速度", "tr_di": "損傷指数",
@@ -759,9 +852,10 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120,
     mode   = str(reheat.get("mode","sequential")).lower()
     t_cool  = sum(z["duration"] for z in zones)
     t_reh   = float(reheat["duration"])
-    n_pulse = int(reheat.get("pulses",0) or 0)
-    pulse_s = float(reheat.get("pulse_sec",0) or 0.0)
-    pulsed  = (mode == "pulsed") and n_pulse > 0 and pulse_s > 0.0
+    spans   = burst_spans(reheat, t_cool) if mode == "pulsed" else []
+    pulsed  = bool(spans)
+    n_pulse = len(spans)
+    pulse_s = round(float(np.mean([(e - s) * 60.0 for s, e in spans])), 2) if pulsed else 0.0
     simul   = (mode == "simultaneous") and t_reh > 0.0
     surf_reheat = simul or pulsed        # bulk cools; surface reheated concurrently
     t_sol,t_liq,t_mid = melt_band(melt)
@@ -773,16 +867,11 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120,
         zb.append((ta,ta+z["duration"],z["T"]))
         ta+=z["duration"]
 
-    # Pulse window: N bursts of pulse_s seconds spread across the early cooling.
-    pulse_win = float(min(reheat.get("pulse_window",6.0), t_cool)) if pulsed else 0.0
+    # Pulse window: up to the end of the last burst (even pattern or hand-placed).
+    pulse_win = max(e for _, e in spans) if pulsed else 0.0
     def _surf_hot(tm):
         if simul:  return reh_s <= tm < reh_e
-        if pulsed:
-            if tm >= pulse_win: return False
-            slot = pulse_win/max(n_pulse,1)
-            k = int(tm//slot)
-            return (tm - k*slot) < (pulse_s/60.0)
-        return False
+        return any(s <= tm < e for s, e in spans)
 
     if surf_reheat:
         # Surface reheat runs concurrently with cooling; the bulk never sees hot
@@ -801,9 +890,10 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120,
         t_fin = float(np.clip(30.0 - t_cool - t_reh - 0.5, 2.0, 8.0))
         t_tot = t_cool + t_reh + t_fin
 
-    # Pulsed bursts are short (~20 s); resolve them with enough time steps.
+    # Pulsed bursts are short (~20 s); resolve the shortest with enough time steps.
     if pulsed:
-        n_pts = max(n_pts, int(t_tot/max(pulse_s/60.0/2.0,0.02)) + 1, 260)
+        d_min = min(e - s for s, e in spans)
+        n_pts = max(n_pts, int(t_tot/max(d_min/2.0,0.02)) + 1, 260)
     times   = np.linspace(0,t_tot,n_pts)
 
     tau_c = max(2.0, RHO*CP*R_M**2/(K_TH*(h_cool*R_M/K_TH+0.1)*10))/60.0
@@ -904,7 +994,7 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120,
         DI_arr[i] = DI
 
     dT_dt=np.gradient(Ts,times)
-    if pulsed:      t_reheat_out = n_pulse*pulse_s/60.0     # total surface-reheat on-time
+    if pulsed:      t_reheat_out = sum(e - s for s, e in spans)   # total surface-reheat on-time
     elif simul:     t_reheat_out = reh_e - reh_s
     else:           t_reheat_out = t_reh
     _rmode = "pulsed" if pulsed else ("simultaneous" if simul else "sequential")
@@ -917,12 +1007,13 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120,
                 n_pulse=(n_pulse if pulsed else 0),
                 pulse_sec=(pulse_s if pulsed else 0.0),
                 pulse_window=(pulse_win if pulsed else 0.0),
+                bursts=[[round(s,4),round(e,4)] for s,e in spans],
                 melt=(float(melt) if melt is not None else t_mid),
                 late_cool_T=late_T,
                 mushy=(t_sol,t_liq),
                 zones=zones)
 
-# ── Peridynamic crack helpers (module-level — used by both fig_belt and main) ──
+# ── Peridynamic crack helpers (module-level — used by the surface-integrity view) ──
 
 def _crack_color(DI_v):
     return _rcol(DI_v)
@@ -972,349 +1063,17 @@ def _grow_branch(x0, y0, z0, dx, dy, dz, length, depth, R_c, H_c, rng, segments)
                      length * 0.45, depth - 2, R_c, H_c, rng, segments)
 
 
-def peridynamic_crack_traces(sx, sy, DI_v, seed, col):
-    """
-    Realistic ヒケ (sink-mark) crack pattern:
-      - ONE main trunk from top fill-point (z=H, r≈0) going straight DOWN
-      - 2–4 radial branches grow outward from the trunk midpoint
-      - Sub-branches at the ends → natural fracture network
-    Only shown for WARNING and above (DI ≥ 0.25).
-    """
-    if DI_v < 0.25:
-        return []
-
-    rng    = np.random.default_rng(int(seed) % 9999)
-    hl     = _lighten_color(col)
-    w      = int(np.clip(DI_v * 16 + 5, 6, 20))
-    all_xs, all_ys, all_zs = [], [], []
-
-    # ── MAIN TRUNK: top-center → straight down ────────────────────────────
-    z0 = H_S * rng.uniform(0.93, 1.00)   # start at very top
-    x0 = R_S * 0.05 * rng.normal(0, 1)   # nearly on axis
-    y0 = R_S * 0.05 * rng.normal(0, 1)
-    trunk_len  = H_S * float(np.clip(DI_v * 0.90, 0.35, 0.92))
-    trunk_segs = []
-    _grow_branch(x0, y0, z0,
-                 rng.normal(0, 0.04),   # almost straight down
-                 rng.normal(0, 0.04),
-                 -1.0,
-                 trunk_len, depth=3,
-                 R_c=R_S * 0.50,        # constrained near centre
-                 H_c=H_S, rng=rng, segments=trunk_segs)
-
-    for xs, ys, zs in trunk_segs:
-        all_xs.extend(xs + [None]); all_ys.extend(ys + [None]); all_zs.extend(zs + [None])
-
-    # ── RADIAL BRANCHES from trunk midpoint ──────────────────────────────
-    if trunk_segs:
-        xs_tr, ys_tr, zs_tr = trunk_segs[0]
-        mid = max(0, len(xs_tr) // 2 - 1)
-        bx, by, bz = xs_tr[mid], ys_tr[mid], zs_tr[mid]
-        n_br   = max(2, int(DI_v * 5))
-        b_len  = H_S * float(np.clip(DI_v * 0.55, 0.20, 0.60))
-        for i in range(n_br):
-            angle = (i / n_br) * 2 * np.pi + rng.uniform(-0.2, 0.2)
-            bdx   = np.cos(angle) * 0.75
-            bdy   = np.sin(angle) * 0.75
-            bdz   = -rng.uniform(0.15, 0.45)
-            nm    = float(np.sqrt(bdx**2 + bdy**2 + bdz**2)) + 1e-9
-            br_segs = []
-            _grow_branch(bx, by, bz,
-                         bdx/nm, bdy/nm, bdz/nm,
-                         b_len, depth=2,
-                         R_c=R_S, H_c=H_S, rng=rng, segments=br_segs)
-            for xs, ys, zs in br_segs:
-                all_xs.extend(xs+[None]); all_ys.extend(ys+[None]); all_zs.extend(zs+[None])
-
-    xs_off = [sx + v if v is not None else None for v in all_xs]
-    ys_off = [sy + v if v is not None else None for v in all_ys]
-
-    return [
-        go.Scatter3d(x=xs_off, y=ys_off, z=all_zs, mode="lines",
-                     line=dict(color=col, width=w),
-                     opacity=0.95, showlegend=False, hoverinfo="skip"),
-        go.Scatter3d(x=xs_off, y=ys_off, z=all_zs, mode="lines",
-                     line=dict(color=hl, width=max(2, w-4)),
-                     opacity=0.80, showlegend=False, hoverinfo="skip"),
-        go.Scatter3d(x=[sx + x0], y=[sy + y0], z=[z0], mode="markers",
-                     marker=dict(size=6, color=INK["frost"],
-                                 line=dict(color=col, width=2)),
-                     opacity=1.0, showlegend=False, hoverinfo="skip"),
-    ]
-
-
 def _lighten_color(hex_col, k=0.55):
     """Mix a hex colour toward white (crack highlight / glow core)."""
     r,g,b=_hex2rgb(hex_col)
     return "#%02x%02x%02x" % tuple(round(c+(255-c)*k) for c in (r,g,b))
 
 
-# ── U-Turn Belt Figure ─────────────────────────────────────────────────────
-# Box triangulation shared by every plate and hot-air hood.
-_BOX_I=[0,0,4,4,0,0,3,3,0,0,1,1]
-_BOX_J=[1,2,5,6,1,5,2,6,3,7,2,6]
-_BOX_K=[2,3,6,7,5,4,6,7,7,4,6,5]
-_LIT =dict(ambient=0.62,diffuse=0.55,specular=0.12,roughness=0.85,fresnel=0.05)
-_GLOW=dict(ambient=0.95,diffuse=0.35,specular=0.05,roughness=1.0,fresnel=0.0)
-_LIGHT_POS=dict(x=60,y=-120,z=400)
-
-def _slab(x0,x1,y0,y1,z0,z1,color,opacity=1.0,hover=None,lighting=_LIT):
-    """Axis-aligned box as a lit Mesh3d (belt plates, hot-air hoods)."""
-    return go.Mesh3d(x=[x0,x1,x1,x0,x0,x1,x1,x0], y=[y0,y0,y1,y1,y0,y0,y1,y1],
-                     z=[z0,z0,z0,z0,z1,z1,z1,z1], i=_BOX_I, j=_BOX_J, k=_BOX_K,
-                     color=color, opacity=opacity, flatshading=True,
-                     lighting=lighting, lightposition=_LIGHT_POS, showlegend=False,
-                     hovertemplate=(hover+"<extra></extra>") if hover else None,
-                     hoverinfo=None if hover else "skip")
-
-# Stick = shaded cylinder (side + top cap), vertex-coloured by temperature.
-_N_TH, _N_ZL = 40, 14
-def _stick_faces():
-    I,J,K=[],[],[]
-    for iz in range(_N_ZL-1):
-        for it in range(_N_TH):
-            a=iz*_N_TH+it; b=iz*_N_TH+(it+1)%_N_TH; c=a+_N_TH; d=b+_N_TH
-            I+=[a,a]; J+=[b,d]; K+=[d,c]
-    C=_N_TH*_N_ZL; top=(_N_ZL-1)*_N_TH
-    for it in range(_N_TH):
-        I.append(C); J.append(top+it); K.append(top+(it+1)%_N_TH)
-    return I,J,K
-_STICK_I,_STICK_J,_STICK_K=_stick_faces()
-_TH=np.tile(np.linspace(0,2*np.pi,_N_TH,endpoint=False),_N_ZL)
-_ZL=np.repeat(np.linspace(0,H_S,_N_ZL),_N_TH)
-
-def _stick(sx,sy,Ts,Tc,cbar=None):
-    """The top surface (天面) takes the surface temperature, the body the
-    core temperature, so hot top / cool body reads directly as colour."""
-    x=np.append(sx+R_S*np.cos(_TH),sx); y=np.append(sy+R_S*np.sin(_TH),sy)
-    z=np.append(_ZL,H_S)
-    temps=np.append(float(Tc)+(float(Ts)-float(Tc))*(_ZL/H_S)**2.2,float(Ts))
-    return go.Mesh3d(x=x.tolist(),y=y.tolist(),z=z.tolist(),
-        i=_STICK_I,j=_STICK_J,k=_STICK_K,intensity=temps.tolist(),
-        colorscale=HEAT_SCALE,cmin=HEAT_MIN,cmax=HEAT_MAX,opacity=0.8,
-        flatshading=False,lightposition=_LIGHT_POS,
-        lighting=dict(ambient=0.5,diffuse=0.75,specular=0.45,roughness=0.35,fresnel=0.3),
-        showscale=cbar is not None,colorbar=cbar,hoverinfo="skip",showlegend=False)
-
-def fig_belt(ts, zones, reheat, h_cool, h_reheat, n_frames=40):
-    t_cool=float(ts["t_cool"]); t_reh=float(ts["t_reheat"])
-    t_tot=float(ts["t_total"]); t_fin=float(ts["t_final"])
-    reh_s=float(ts["reheat_start"]); reh_e=float(ts["reheat_end"])
-    # Concurrent surface reheat (simultaneous OR pulsed): hot air on the TOP
-    # surface while the bulk keeps cooling, so there is no separate reheat leg.
-    _rmode=ts.get("reheat_mode")
-    simul=(_rmode=="simultaneous" and t_reh>0)
-    pulsed=(_rmode=="pulsed" and int(ts.get("n_pulse",0))>0)
-    surf=simul or pulsed
-    n_pulse=int(ts.get("n_pulse",0)); pulse_sec=float(ts.get("pulse_sec",0))
-    pulse_win=float(ts.get("pulse_window",0.0)) or reh_e
-    T_air=float(reheat["T"]); hot=_heat(T_air)
-    late=float(ts.get("late_cool_T",T_ROOM))
-    y0t,y1t=LANE_TOP-BELT_W,LANE_TOP+BELT_W
-    y0b,y1b=LANE_BOT-BELT_W,LANE_BOT+BELT_W
-    PZ=-0.32            # plate thickness, cm
-    hood_z=H_S+1.6      # hot-air nozzle bar height above the belt, cm
-
-    static=[]
-    def _label(x,y,z,txt,col=INK["frost2"],size=11):
-        static.append(go.Scatter3d(x=[x],y=[y],z=[z],mode="text",text=[txt],
-            textfont=dict(size=size,color=col,family=FONT),
-            showlegend=False,hoverinfo="skip"))
-    def _hood(x0,x1,lane_y,hover):
-        # A slim nozzle bar over the lane centre; jets fan out onto the tops.
-        static.append(_slab(x0,x1,lane_y-0.5,lane_y+0.5,hood_z,hood_z+0.16,
-                            hot,0.85,hover,_GLOW))
-        for f in (np.linspace(0.2,0.8,3) if (x1-x0)>3 else (0.5,)):
-            xj=x0+(x1-x0)*float(f)
-            for ya in (lane_y-1.3,lane_y,lane_y+1.3):
-                static.append(go.Scatter3d(x=[xj,xj],y=[lane_y,ya],z=[hood_z-0.02,H_S+0.25],
-                    mode="lines",line=dict(color=_rgba(hot,0.75),width=3),
-                    showlegend=False,hoverinfo="skip"))
-
-    # Top lane: cooling-zone plates, each coloured by its air temperature
-    x_acc=0.0
-    for i,z in enumerate(zones):
-        xw=z["duration"]/max(t_cool,0.01)*L_COOL; xs,xe=x_acc,x_acc+xw
-        txt=t("zone_plate").format(z=t("zone_n").format(n=i+1),T=z["T"],d=z["duration"])
-        static.append(_slab(xs+0.06,xe-0.06,y0t,y1t,PZ,0,_heat(z["T"]),0.96,
-                            txt.replace("<br>",", ")))
-        _label((xs+xe)/2,y1t+1.5,0,txt)
-        x_acc=xe
-
-    ftxt=t("final_plate").format(T=late)
-    if surf:
-        xrs=L_COOL
-        if pulsed:
-            win_x=pulse_win/max(t_cool,0.01)*L_COOL; slot=win_x/max(n_pulse,1)
-            bw=float(np.clip((pulse_sec/60.0)/max(t_cool,0.01)*L_COOL*3,slot*0.35,slot*0.9))
-            for k in range(n_pulse):
-                _hood(k*slot,k*slot+bw,LANE_TOP,
-                      f"{k+1}/{n_pulse}, {int(pulse_sec)} s, {T_air:.0f} °C")
-            _label(win_x/2,LANE_TOP,hood_z+1.0,
-                   t("belt_bursts").format(n=n_pulse,s=int(pulse_sec),T=T_air),
-                   _lighten_color(hot,0.35))
-        else:
-            xr=reh_e/max(t_cool,0.01)*L_COOL
-            _hood(0,xr,LANE_TOP,t("belt_hot_air").format(T=T_air))
-            _label(xr/2,LANE_TOP,hood_z+1.0,t("belt_hot_air").format(T=T_air),
-                   _lighten_color(hot,0.35))
-        static.append(_slab(0.06,L_COOL-0.06,y0b,y1b,PZ,0,_heat(late),0.96,
-                            ftxt.replace("<br>",", ")))
-        _label(L_COOL/2,y0b-1.5,0,ftxt)
-    else:
-        r_frac=t_reh/max(t_reh+t_fin,0.01) if t_reh>0 else 0
-        xrs=L_COOL*(1-r_frac)
-        if t_reh>0:
-            rtxt=t("belt_hot_air").format(T=T_air)
-            # The glowing plate marks the reheat leg. No overhead bar here: from
-            # the camera it would project onto the cooling lane and mislead.
-            static.append(_slab(xrs+0.06,L_COOL-0.06,y0b,y1b,PZ,0,hot,0.96,rtxt,_GLOW))
-            _label((xrs+L_COOL)/2,y0b-1.5,0,rtxt)
-        static.append(_slab(0.06,max(xrs-0.06,0.07),y0b,y1b,PZ,0,_heat(late),0.96,
-                            ftxt.replace("<br>",", ")))
-        _label(xrs/2,y0b-1.5,0,ftxt)
-
-    # Rails and the U-turn
-    rail=_rgba(INK["frost3"],0.45)
-    for ly in (y0t,y1t,y0b,y1b):
-        static.append(go.Scatter3d(x=[0,L_COOL],y=[ly,ly],z=[0.02,0.02],mode="lines",
-            line=dict(color=rail,width=2),showlegend=False,hoverinfo="skip"))
-    th=np.linspace(0,np.pi,40)
-    for r,dep in ((LANE_TOP+BELT_W,1.6),(LANE_TOP-BELT_W,0.5)):
-        static.append(go.Scatter3d(x=(L_COOL+dep*np.sin(th)).tolist(),
-            y=(r*np.cos(th)).tolist(),z=[0.02]*len(th),mode="lines",
-            line=dict(color=rail,width=2),showlegend=False,hoverinfo="skip"))
-
-    n_st=len(static)
-    cbar=dict(title=dict(text="°C",font=dict(size=11,color=INK["frost3"])),
-              thickness=8,len=0.42,x=0.99,y=0.58,outlinewidth=0,
-              tickvals=[20,40,60,80,100],tickfont=dict(size=10,color=INK["frost3"]))
-
-    def stick_pos(frac_t):
-        fc=t_cool/max(t_tot,0.01)
-        if surf:
-            # No separate reheat leg: cooling on the top lane, then final cool
-            # on the return lane (reheat happens concurrently on the top lane).
-            if frac_t<=fc:
-                return float(np.clip(frac_t/max(fc,1e-6),0,1)*L_COOL),LANE_TOP
-            rel=(frac_t-fc)/max(1-fc,1e-6)
-            return float(L_COOL-rel*L_COOL),LANE_BOT
-        fr=t_reh/max(t_tot,0.01)
-        if frac_t<=fc:
-            return float(np.clip(frac_t/max(fc,1e-6),0,1)*L_COOL),LANE_TOP
-        elif frac_t<=fc+fr:
-            rel=(frac_t-fc)/max(fr,1e-6)
-            return float(L_COOL-rel*(L_COOL-xrs)),LANE_BOT
-        else:
-            rel=(frac_t-fc-fr)/max(1-fc-fr,1e-6)
-            return float(xrs-rel*xrs),LANE_BOT
-
-    times_a=np.array(ts["times"]); DI_a=np.array(ts["DI"]); Ts_a=np.array(ts["T_surf"])
-    Tc_a=np.array(ts["T_core"]); Tm=float(ts["t_total"])
-
-    # Plotly frames can only UPDATE existing traces, so keep exactly N_CRACK
-    # crack slots (empty while the damage index is below 0.25).
-    N_CRACK = 3
-    def _empty_crack():
-        return go.Scatter3d(x=[None], y=[None], z=[None], mode="lines",
-                            line=dict(color="rgba(0,0,0,0)", width=1),
-                            showlegend=False, hoverinfo="skip")
-    def _pad_cracks(crack_list):
-        out = list(crack_list)
-        while len(out) < N_CRACK:
-            out.append(_empty_crack())
-        return out[:N_CRACK]
-    def _marker(sx,sy,DI,in_reh):
-        col=hot if in_reh else _rcol(DI)
-        word=t("belt_reheating") if in_reh else _rname(DI)
-        return go.Scatter3d(x=[sx],y=[sy],z=[H_S+0.9],mode="markers+text",
-            marker=dict(size=5,color=col,line=dict(color=INK["night"],width=1)),
-            text=[f"{word} {DI:.2f}"],textposition="top center",
-            textfont=dict(size=11,color=INK["frost"],family=FONT),
-            showlegend=False,hoverinfo="skip")
-    def _in_reh(tm):
-        if pulsed:
-            slot=pulse_win/max(n_pulse,1)
-            return tm<pulse_win and (tm-int(tm//slot)*slot)<pulse_sec/60.0
-        return reh_s<=tm<reh_e and t_reh>0
-
-    sx0,sy0=stick_pos(0); Ts0=float(Ts_a[0]); DI0=float(DI_a[0])
-    all_t = static + [_stick(sx0,sy0,Ts0,float(Tc_a[0]),cbar),
-                      _marker(sx0,sy0,DI0,_in_reh(0.0))] + _pad_cracks(
-        peridynamic_crack_traces(sx0, sy0, DI0, 42, _crack_color(DI0)))
-    si = n_st; li = n_st + 1
-    crack_trace_indices = list(range(n_st + 2, n_st + 2 + N_CRACK))
-
-    frames=[]; steps=[]
-    for fi,tm in enumerate(np.linspace(0,Tm,n_frames)):
-        sx_f,sy_f=stick_pos(tm/max(Tm,0.01))
-        idx=int(np.argmin(np.abs(times_a-tm)))
-        DI_f=float(DI_a[idx]); Ts_f=float(Ts_a[idx]); Tc_f=float(Tc_a[idx])
-        ir=_in_reh(tm)
-        frame_data=[_stick(sx_f,sy_f,Ts_f,Tc_f,cbar), _marker(sx_f,sy_f,DI_f,ir)] + \
-            _pad_cracks(peridynamic_crack_traces(sx_f,sy_f,DI_f,fi*7+13,_crack_color(DI_f)))
-        frames.append(go.Frame(data=frame_data, traces=[si, li] + crack_trace_indices,
-            name=str(fi), layout=go.Layout(title_text=t("belt_frame").format(
-                t=tm,Ts=Ts_f,di=DI_f))))
-        steps.append(dict(method="animate",
-            args=[[str(fi)], dict(mode="immediate", frame=dict(duration=150, redraw=True),
-                                  transition=dict(duration=0))],
-            label=f"{tm:.1f}"))
-
-    lane_top=t("lane_cool_top") if surf else t("lane_cool")
-    lane_bot=t("lane_final") if surf else t("lane_reheat_final")
-    fig=go.Figure(data=all_t,frames=frames)
-    fig.update_layout(
-        height=620, showlegend=False,
-        # Constant uirevision keeps the user's camera through timeline drags
-        # and Streamlit reruns instead of snapping back to the default view.
-        uirevision="belt-scene",
-        title=dict(text=t("belt_frame").format(t=0.0,Ts=Ts0,di=DI0),x=0.0,
-                   xanchor="left",y=0.985,font=dict(size=14,color=INK["frost"])),
-        margin=dict(l=0,r=0,t=44,b=70),
-        scene=dict(
-            uirevision="belt-scene",
-            xaxis=dict(title=dict(text=t("belt_x")),range=[-1.5,L_COOL+3],showgrid=False),
-            yaxis=dict(title=dict(text=""),tickvals=[LANE_BOT,LANE_TOP],
-                       ticktext=[lane_bot,lane_top],tickfont=dict(size=11,color=INK["frost2"]),
-                       range=[LANE_BOT-BELT_W-3,LANE_TOP+BELT_W+3],showgrid=False),
-            zaxis=dict(title=dict(text=""),showticklabels=False,showbackground=True,
-                       backgroundcolor="rgba(23,33,49,0.55)",range=[PZ-0.3,hood_z+1.6],
-                       showgrid=False),
-            aspectmode="manual",aspectratio=dict(x=3.0,y=1.55,z=0.55),
-            camera=dict(eye=dict(x=1.05,y=-1.85,z=0.95),center=dict(x=0.04,y=0,z=-0.14),
-                        projection=dict(type="perspective"))),
-        updatemenus=[dict(type="buttons",direction="right",showactive=False,
-            x=0.0,y=0.0,xanchor="left",yanchor="top",pad=dict(t=14,r=8),
-            bgcolor=INK["deck2"],bordercolor=INK["rule2"],borderwidth=1,
-            font=dict(color=INK["frost"],size=12,family=FONT),
-            buttons=[
-                dict(label=t("play"),method="animate",
-                     args=[None,dict(frame=dict(duration=140,redraw=True),
-                                     fromcurrent=True,transition=dict(duration=0),
-                                     mode="immediate")]),
-                dict(label=t("pause"),method="animate",
-                     args=[[None],dict(frame=dict(duration=0),mode="immediate",
-                                       transition=dict(duration=0))]),
-            ])],
-        sliders=[dict(active=0,steps=steps,x=0.16,len=0.84,y=0.0,yanchor="top",
-            pad=dict(t=14,b=0),
-            currentvalue=dict(prefix=t("time")+"  ",suffix=" "+t("min"),visible=True,
-                              xanchor="right",offset=6,
-                              font=dict(color=INK["frost"],size=12,family=FONT)),
-            transition=dict(duration=0),bgcolor=INK["deck2"],activebgcolor=INK["frost"],
-            bordercolor=INK["rule2"],borderwidth=1,tickcolor=INK["rule2"],
-            ticklen=3,minorticklen=0,font=dict(color="rgba(0,0,0,0)",size=1))],
-    )
-    return fig
-
 # ── Thermal history (temperature, gradient, damage index) ─────────────────
 def _reheat_spans(ts):
-    """Time spans with hot air on the surface: one window, or each burst."""
-    if ts.get("reheat_mode")=="pulsed" and int(ts.get("n_pulse",0))>0:
-        n=int(ts["n_pulse"]); slot=float(ts["pulse_window"])/n
-        d=float(ts["pulse_sec"])/60.0
-        return [(k*slot,k*slot+d) for k in range(n)]
+    """Time spans with hot air on the surface: each burst, or one window."""
+    if ts.get("reheat_mode")=="pulsed":
+        return [tuple(b) for b in ts.get("bursts",[])]
     if float(ts.get("t_reheat",0))>0 and ts["reheat_end"]>ts["reheat_start"]:
         return [(float(ts["reheat_start"]),float(ts["reheat_end"]))]
     return []
@@ -1441,7 +1200,9 @@ def fig_charts(ts,label=""):
 
     def _ip(tm): return any(a<=tm<b for a,b in spans)
     frames=[]; steps=[]
-    for fi in range(n):
+    # ~60 pointer frames are smooth enough; one per sample (500+ for pulsed
+    # runs) made this figure take seconds to build on every rerun.
+    for fi in np.unique(np.linspace(0,n-1,min(n,60)).astype(int)).tolist():
         tm=times[fi]; Ts_f=ts["T_surf"][fi]; Tc_f=ts["T_core"][fi]
         dT_f=ts["dT"][fi]; DI_f=ts["DI"][fi]; ip=_ip(tm)
         frames.append(go.Frame(data=_ptr(tm,Ts_f,Tc_f,dT_f,DI_f,ip),
@@ -1519,39 +1280,26 @@ def sidebar():
         horizontal=True, key="lang_sel")
     st.session_state.lang = _lang_map[_sel]
 
-    # 1 ─ Starting point
+    # 1 ─ Starting point: preset cards, each with its surface-temperature strip
     _sh(t("step_start"))
-    sc_name = st.sidebar.selectbox(t("preset"), list(SCENARIOS.keys()), index=2,
-                                   key="sc_select", format_func=_sc_text)
-    # Auto-load when scenario changes — no button click needed
-    if st.session_state.get("last_sc") != sc_name:
-        sc = SCENARIOS[sc_name]
-        st.session_state.zones    = [dict(z) for z in sc["zones"]]
-        st.session_state.reheat   = dict(sc["reheat"])
-        st.session_state.h_cool   = sc["h_cool"]
-        st.session_state.h_reheat = sc.get("h_reheat", 12.0)
-        st.session_state.T_fill   = sc.get("T_fill", 80.0)
-        st.session_state.melt     = sc.get("melt", 67.0)
-        st.session_state.late_cool_T = sc.get("late_cool_T", 23.0)
-        st.session_state.last_sc  = sc_name
-        st.session_state.pop("drl_report", None)
-        # Bump zone_version so widget keys change → stale widget values are discarded
-        st.session_state.zone_version = st.session_state.get("zone_version", 0) + 1
+    names = list(SCENARIOS)
+    cur = st.session_state.get("sc_cur")
+    if cur not in SCENARIOS:
+        cur = names[2]
+    # One radio per language: a radio whose labels change is re-created and
+    # loses its selection on the page, so the pick lives in sc_cur.
+    sc_name = st.sidebar.radio(t("preset"), names, index=names.index(cur),
+                               key="sc_pick_" + st.session_state.get("lang", "en"),
+                               format_func=_sc_text,
+                               captions=[_sc_text(k, desc=True) for k in names],
+                               label_visibility="collapsed")
+    st.session_state.sc_cur = sc_name
+    st.sidebar.markdown(_scenario_css(names), unsafe_allow_html=True)
+    # Auto-load when the pick changes; Reload restores the preset after edits.
+    if (st.session_state.get("last_sc") != sc_name
+            or st.sidebar.button(t("load_preset"), width='stretch')):
+        _load_scenario(sc_name)
         st.rerun()
-    if st.sidebar.button(t("load_preset"), width='stretch'):
-        sc=SCENARIOS[sc_name]
-        st.session_state.zones=[dict(z) for z in sc["zones"]]
-        st.session_state.reheat=dict(sc["reheat"])
-        st.session_state.h_cool=sc["h_cool"]
-        st.session_state.h_reheat=sc.get("h_reheat",12.0)
-        st.session_state.T_fill=sc.get("T_fill",80.0)
-        st.session_state.melt=sc.get("melt",67.0)
-        st.session_state.late_cool_T=sc.get("late_cool_T",23.0)
-        st.session_state.last_sc=sc_name
-        st.session_state.pop("drl_report", None)
-        st.session_state.zone_version=st.session_state.get("zone_version",0)+1
-        st.rerun()
-    st.sidebar.caption(_sc_text(sc_name, desc=True))
 
     # 2 ─ Fill
     _sh(t("step_fill"))
@@ -1611,16 +1359,44 @@ def sidebar():
 
     reh["T"]=float(st.sidebar.slider(t("reheat_T"),40.0,120.0,float(reh.get("T",70.0)),1.0))
     if _pulsed:
-        # Toggled surface reheat (CBIC production line): N short hot-air bursts.
-        reh["pulses"]=int(st.sidebar.slider(t("pulse_count"),1,10,
-            int(reh.get("pulses",5)),1,help=t("pulse_count_help")))
-        reh["pulse_sec"]=int(st.sidebar.slider(t("pulse_dur"),5,60,
-            int(reh.get("pulse_sec",20)),5,help=t("pulse_dur_help")))
-        reh["pulse_window"]=float(st.sidebar.slider(t("pulse_win"),2.0,15.0,
-            float(reh.get("pulse_window",6.0)),0.5,help=t("pulse_win_help")))
+        # Toggled surface reheat (CBIC production line): an even pattern from the
+        # three sliders, or bursts placed by hand (below, or on the 3D line).
+        n0,s0,w0=int(reh.get("pulses",5)),int(reh.get("pulse_sec",20)),float(reh.get("pulse_window",6.0))
+        n=int(st.sidebar.slider(t("pulse_count"),1,12,n0,1,help=t("pulse_count_help")))
+        s=int(st.sidebar.slider(t("pulse_dur"),5,60,s0,5,help=t("pulse_dur_help")))
+        w=float(st.sidebar.slider(t("pulse_win"),2.0,15.0,w0,0.5,help=t("pulse_win_help")))
         reh["duration"]=0.0
-        _on=reh["pulses"]*reh["pulse_sec"]/60.0
-        st.sidebar.caption(t("pulse_note").format(n=reh["pulses"],s=int(reh["pulse_sec"]),on=_on))
+        if not reh.get("bursts") or (n,s,w)!=(n0,s0,w0):
+            reh.update(pulses=n,pulse_sec=s,pulse_window=w,bursts=even_bursts(n,s,min(w,t_cool)))
+            reh.pop("custom",None); _bump_bursts()
+        if reh.get("custom"):
+            st.sidebar.caption(t("pattern_custom"))
+        b=reh["bursts"]
+        with st.sidebar.expander(t("burst_list").format(n=len(b))):
+            bv=f"{ver}_{st.session_state.get('burst_version',0)}"
+            new_b=[]; drop=None
+            for i,(bs,bd) in enumerate(b):
+                cA,cB,cC=st.columns([3,3,1],vertical_alignment="bottom")
+                ns=cA.number_input(t("burst_at").format(n=i+1),0.0,float(t_cool),
+                                   float(min(bs,t_cool)),0.1,format="%.2f",key=f"bs_{bv}_{i}")
+                nd=cB.number_input(t("burst_len"),5,60,int(bd),5,key=f"bd_{bv}_{i}")
+                new_b.append([round(float(ns),3),int(nd)])
+                if cC.button("✕",key=f"bx_{bv}_{i}",help=t("remove_burst").format(n=i+1)) and len(b)>1:
+                    drop=i
+            cD,cE=st.columns(2)
+            add=cD.button(t("add_burst"),width='stretch',disabled=len(b)>=12)
+            even=cE.button(t("even_pattern"),width='stretch')
+        if new_b!=b or drop is not None or add:
+            if drop is not None: new_b.pop(drop)
+            if add: new_b.append([_next_burst(new_b,t_cool,new_b[-1][1]),new_b[-1][1]])
+            reh["bursts"]=new_b; reh["custom"]=True; _sync_pattern(reh)
+            if drop is not None or add:
+                _bump_bursts(); st.rerun()
+        if even:
+            reh["bursts"]=even_bursts(n,s,min(w,t_cool)); reh.pop("custom",None)
+            _bump_bursts(); st.rerun()
+        _on=sum(d for _,d in reh["bursts"])/60.0
+        st.sidebar.caption(t("pulse_note").format(n=len(reh["bursts"]),s=int(reh["pulse_sec"]),on=_on))
     else:
         reh["duration"]=float(st.sidebar.slider(
             t("reheat_window") if _simul else t("reheat_dur"),0.0,15.0,
@@ -1882,34 +1658,6 @@ def _hydrate_env_from_secrets():
 
 
 # ── Hero: outlook, thermal ribbon, read-outs ───────────────────────────────
-def _ribbon_html(ts):
-    """Surface temperature through the cycle as one colour band (same ramp as
-    every other view), hot-air marks above it and the zone segments below."""
-    tt=np.asarray(ts["times"],float); Ts=np.asarray(ts["T_surf"],float)
-    T=float(tt[-1]) or 1.0
-    idx=np.unique(np.linspace(0,len(tt)-1,56).astype(int))
-    stops=",".join(f"{_heat(Ts[i])} {100*tt[i]/T:.2f}%" for i in idx)
-    heat="".join(f"<i style='left:{100*a/T:.2f}%;width:{max(100*(b-a)/T,0.5):.2f}%'></i>"
-                 for a,b in _reheat_spans(ts))
-    segs=[]; acc=0.0
-    for i,z in enumerate(ts["zones"]):
-        segs.append((acc,acc+z["duration"],t("zone_n").format(n=i+1),f"{z['T']:.0f} °C"))
-        acc+=z["duration"]
-    if ts.get("reheat_mode")=="sequential" and float(ts["t_reheat"])>0:
-        segs.append((acc,float(ts["reheat_end"]),t("rb_reheat_seg"),f"{ts['reheat_T']:.0f} °C"))
-        acc=float(ts["reheat_end"])
-    segs.append((acc,T,t("rb_final"),f"{float(ts.get('late_cool_T',T_ROOM)):.0f} °C"))
-    zones="".join(f"<div style='left:{100*a/T:.2f}%;width:{100*(b-a)/T:.2f}%'>"
-                  f"<span>{n}</span><b>{v}</b></div>" for a,b,n,v in segs if b>a)
-    scale=",".join(f"{c} {100*(Tv-HEAT_MIN)/(HEAT_MAX-HEAT_MIN):.0f}%" for Tv,c in HEAT_STOPS)
-    return (f"<div class='ribbon'><div class='rb-cap'><span>{t('rb_label')}</span>"
-            f"<span class='rb-scale'>{HEAT_MIN} °C<i style='background:linear-gradient(90deg,{scale})'>"
-            f"</i>{HEAT_MAX} °C</span></div>"
-            f"<div class='rb-heat' title='{t('rb_reheat')}'>{heat}</div>"
-            f"<div class='rb-band' style='background:linear-gradient(90deg,{stops})'></div>"
-            f"<div class='rb-zones'>{zones}</div>"
-            f"<div class='rb-axis'><span>0 {t('min')}</span><span>{T:.0f} {t('min')}</span></div></div>")
-
 def _readouts_html(ts, params, heal):
     DI=max(ts["DI"]); t_tot=float(ts["t_total"]); Bi=params["h_cool"]*R_M/K_TH
     mode=ts.get("reheat_mode","sequential"); T_air=params["reheat"]["T"]
@@ -1929,6 +1677,8 @@ def _readouts_html(ts, params, heal):
         (t("ro_cycle"), f"{t_tot:.0f}<small>{t('min')}</small>",
          t("st_within") if t_tot<=30 else t("st_over").format(d=t_tot-30),
          None, None if t_tot<=30 else caution),
+        (t("ro_exit"), f"{float(ts['T_surf'][-1]):.0f}<small>°C</small>",
+         t("st_exit").format(t=t_tot), None, None),
         (t("ro_biot"), f"{Bi:.2f}", t("st_uniform") if Bi<=0.5 else t("st_uneven"),
          None, None if Bi<=0.5 else caution),
         (t("ro_heal"), f"{heal:+.3f}" if spans else "–",
@@ -1958,13 +1708,119 @@ def _hero_html(DI, ts, params, heal):
     return (f"<div class='mast'><div class='mast-brand'>{MARK_SVG}<span class='wm'>PI-DRL</span>"
             f"<span class='ds'>{t('brand_desc')}</span></div>"
             f"<div class='mast-client'>CBIC × TUAT</div></div>"
-            f"<div class='hero-k'>{t('outlook')}"
+            f"<div class='hero'><div class='hero-l'><div class='hero-k'>{t('outlook')}"
             f"<span class='chip' style='color:{_rcol(DI)}'>{_rname(DI)}</span></div>"
             f"<div class='verdict' role='heading' aria-level='1'>{t('v_'+vkey)}</div>"
             f"<p class='verdict-sub'>{t('v_detail').format(di=DI)} "
             f"<span>{t('v_'+vkey+'_hint')}</span></p>"
-            f"<p class='live'>{t('live_hint')}</p>"
-            + _ribbon_html(ts) + _readouts_html(ts, params, heal))
+            f"<p class='live'>{t('live_hint')}</p></div>"
+            + _readouts_html(ts, params, heal) + "</div>")
+
+@st.cache_resource(max_entries=16, show_spinner=False)
+def _charts_cached(key, _ts, label):
+    """The thermal-history figure is the slowest thing on the page; build it
+    once per recipe and language (key) instead of on every rerun (chat, tabs).
+    Export copies the figure before restyling, so sharing it is safe."""
+    return fig_charts(_ts, label)
+
+def _tab_head(title, sf, figs=()):
+    """Tab opening: an editorial headline and standfirst, plus up to three key
+    figures for that view as (value, label, colour or None)."""
+    cells = "".join("<div><b" + (f" style='color:{c}'" if c else "") + f">{v}</b><span>{lbl}</span></div>"
+                    for v, lbl, c in figs)
+    side = f"<div class='th-f'>{cells}</div>" if figs else ""
+    return (f"<div class='th'><div class='th-l'><div class='th-h' role='heading' aria-level='2'>"
+            f"{title}</div><p class='sf'>{sf}</p></div>{side}</div>")
+
+def _thermal_head(ts):
+    tt = np.asarray(ts["times"], float); Ts = np.asarray(ts["T_surf"], float)
+    lo, hi = ts["mushy"]; dt = np.diff(tt, prepend=tt[0]); m = t("min")
+    mushy = float(dt[(Ts >= lo) & (Ts <= hi)].sum())
+    gap = float(np.max(np.abs(np.asarray(ts["T_core"], float) - Ts)))
+    rate = abs(float(np.min(ts["dTdt"])))
+    return _tab_head(t("th_temp"), t("sf_temp"), [
+        (f"{mushy:.1f}<small>{m}</small>", t("f_mushy"), None),
+        (f"{gap:.0f}<small>°C</small>", t("f_gap"), None),
+        (f"{rate:.1f}<small>°C/{m}</small>", t("f_rate"), None)])
+
+# ── Scenario cards (sidebar) ───────────────────────────────────────────────
+def _load_scenario(name):
+    sc = SCENARIOS[name]; ss = st.session_state
+    ss.zones = [dict(z) for z in sc["zones"]]
+    ss.reheat = dict(sc["reheat"])
+    ss.h_cool = sc["h_cool"]; ss.h_reheat = sc.get("h_reheat", 12.0)
+    ss.T_fill = sc.get("T_fill", 80.0); ss.melt = sc.get("melt", 67.0)
+    ss.late_cool_T = sc.get("late_cool_T", 23.0)
+    ss.last_sc = name
+    ss.pop("drl_report", None)
+    # New widget keys, so stale zone and burst inputs are discarded
+    ss.zone_version = ss.get("zone_version", 0) + 1
+
+@st.cache_data(show_spinner=False)
+def _scenario_preview(name):
+    """Surface-temperature strip (CSS gradient stops) and peak damage of a preset."""
+    sc = SCENARIOS[name]
+    ts = build_timeline(sc["T_fill"], sc["zones"], sc["reheat"], sc["h_cool"],
+                        sc.get("h_reheat", 12.0), n_pts=120,
+                        melt=sc.get("melt"), late_cool_T=sc.get("late_cool_T"))
+    tt = np.asarray(ts["times"], float); Ts = np.asarray(ts["T_surf"], float)
+    T = float(tt[-1]) or 1.0
+    idx = np.unique(np.linspace(0, len(tt) - 1, 28).astype(int))
+    return ",".join(f"{_heat(Ts[i])} {100*tt[i]/T:.1f}%" for i in idx), float(max(ts["DI"]))
+
+def _scenario_css(names):
+    """Per-card CSS: a strip of the preset's surface temperature and its peak
+    damage index in the risk colour. The radio itself stays native."""
+    rules = []
+    for k, n in enumerate(names, 1):
+        stops, di = _scenario_preview(n)
+        sel = f"[class*='st-key-sc_pick'] label[data-baseweb='radio']:nth-of-type({k})"
+        rules.append(f"{sel}{{--strip:linear-gradient(90deg,{stops})}}"
+                     f"{sel}::after{{content:'{di:.2f}';color:{_rcol(di)}}}")
+    return "<style>" + "".join(rules) + "</style>"
+
+def _bump_bursts():
+    st.session_state.burst_version = st.session_state.get("burst_version", 0) + 1
+
+# ── Line studio: the production line as a live 3D scene (custom component) ──
+_line_studio = components.declare_component(
+    "line_studio", path=str(Path(__file__).parent / "components" / "line_studio"))
+
+def _on_studio():
+    """Edits on the 3D line (drag, add or remove a burst) land here before the
+    rerun, so the physics and every view recompute with the new bursts."""
+    v = st.session_state.get("studio") or {}
+    reh = st.session_state.get("reheat")
+    if reh is None or not v.get("bursts"):
+        return
+    reh["bursts"] = sorted([round(float(s), 3), int(d)] for s, d in v["bursts"])[:12]
+    reh["mode"] = "pulsed"; reh["custom"] = True
+    _sync_pattern(reh); _bump_bursts()
+
+def _studio(ts, params):
+    reh = params["reheat"]; mode = ts.get("reheat_mode", "sequential")
+    rnd = lambda a, k: [round(float(x), k) for x in a]
+    lab = {k[3:]: t(k) for k in TR["en"] if k.startswith("ls_")}
+    lab.update(min=t("min"), zone=t("zone_n"), reheat=t("rb_reheat_seg"), final=t("rb_final"),
+               play=t("play"), pause=t("pause"))
+    seq = ([float(ts["reheat_start"]), float(ts["reheat_end"])]
+           if mode == "sequential" and float(ts["t_reheat"]) > 0 else None)
+    _line_studio(
+        times=rnd(ts["times"], 3), Ts=rnd(ts["T_surf"], 2), Tc=rnd(ts["T_core"], 2),
+        DI=rnd(ts["DI"], 4), tc=float(ts["t_cool"]), tt=float(ts["t_total"]), mode=mode,
+        Tair=float(reh["T"]), Tfill=float(ts["T_fill"]),
+        late=float(ts.get("late_cool_T", T_ROOM)),
+        spans=[[round(a, 3), round(b, 3)] for a, b in _reheat_spans(ts)],
+        bursts=([[float(s), int(d)] for s, d in reh.get("bursts", [])] if mode == "pulsed" else []),
+        seq=seq, zones=[{"T": float(z["T"]), "d": float(z["duration"])} for z in ts["zones"]],
+        geo={"L": L_COOL, "r": (LANE_TOP - LANE_BOT) / 2, "bw": BELT_W, "R": R_S, "H": H_S},
+        heat=[[T, c] for T, c in HEAT_STOPS],
+        risk=[[0.80, RISK_COL["CRITICAL"], t("risk_critical")],
+              [0.50, RISK_COL["WARNING"], t("risk_warning")],
+              [0.25, RISK_COL["CAUTION"], t("risk_caution")],
+              [0.0, RISK_COL["SAFE"], t("risk_safe")]],
+        lab=lab, editable=(mode == "pulsed"),
+        key="studio", default=None, on_change=_on_studio)
 
 def main():
     # ─── Cloud secrets → env (deployment) ──────────────────────────────────
@@ -1996,7 +1852,7 @@ html,body,.stApp{color:var(--frost);font-family:var(--font)!important;
   radial-gradient(1100px 520px at 74% -12%, rgba(221,106,58,.10), transparent 62%),
   radial-gradient(900px 640px at -6% 110%, rgba(95,155,211,.08), transparent 60%),
   #111926!important;background-attachment:fixed!important}
-[data-testid="stHeader"]{background:transparent!important}
+[data-testid="stHeader"]{background:linear-gradient(180deg,rgba(17,25,38,.94) 30%,rgba(17,25,38,0))!important}
 [data-testid="stDecoration"]{display:none!important}
 [data-testid="stMainBlockContainer"],.block-container{max-width:1440px!important;
   padding:2.2rem 3rem 5rem!important}
@@ -2069,17 +1925,37 @@ html,body,.stApp{color:var(--frost);font-family:var(--font)!important;
 [data-testid="stSliderTickBarMin"],[data-testid="stSliderTickBarMax"],
 [data-testid="stTickBarMin"],[data-testid="stTickBarMax"]{color:var(--frost3)!important}
 
-/* Tabs: quiet text tabs with a frost underline */
-.stTabs [data-baseweb="tab-list"]{gap:2.2rem!important;background:transparent!important;
-  border-bottom:1px solid var(--rule)!important;padding:0!important}
-.stTabs [data-baseweb="tab"]{background:transparent!important;padding:.85rem 0!important;
-  border-radius:0!important;color:var(--frost3)!important}
-.stTabs [data-baseweb="tab"] p{font-size:.98rem!important;font-stretch:112%;font-weight:550!important}
-.stTabs [data-baseweb="tab"]:hover{color:var(--frost2)!important}
-.stTabs [aria-selected="true"]{color:var(--frost)!important}
-.stTabs [data-baseweb="tab-highlight"]{background:var(--frost)!important;height:2px!important}
-.stTabs [data-baseweb="tab-border"]{display:none!important}
-.stTabs [data-baseweb="tab-panel"]{padding-top:1.4rem!important}
+/* Tabs: a floating glass bar that stays in reach while a long view scrolls */
+.stTabs{margin-top:2.6rem}
+.stTabs div:has(> [data-baseweb="tab-list"]){position:sticky;top:3.9rem;z-index:30;
+  width:fit-content;max-width:100%}
+.stTabs [data-baseweb="tab-list"]{gap:.2rem!important;padding:.3rem!important;overflow-x:auto;
+  background:rgba(23,33,49,.74)!important;border:1px solid var(--rule)!important;border-radius:999px!important;
+  -webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%)}
+.stTabs [data-baseweb="tab"]{height:auto!important;padding:.55rem 1.25rem!important;border-radius:999px!important;
+  background:transparent!important;color:var(--frost3)!important;white-space:nowrap;
+  transition:background .2s ease,color .2s ease}
+.stTabs [data-baseweb="tab"] p{font-size:.92rem!important;font-stretch:108%;font-weight:550!important;
+  color:inherit!important}
+.stTabs [data-baseweb="tab"]:hover{color:var(--frost)!important;background:rgba(232,237,244,.07)!important}
+.stTabs [aria-selected="true"],.stTabs [aria-selected="true"]:hover{background:var(--frost)!important;
+  color:var(--night)!important}
+.stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important}
+.stTabs [data-baseweb="tab-panel"]{padding-top:1.8rem!important}
+.stTabs [data-baseweb="tab-panel"]>div{animation:fadeIn .35s ease both}
+
+/* Tab head: editorial headline, standfirst, the view's key figures */
+.th{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2.6rem;align-items:end;
+  margin:0 0 1.8rem;padding-bottom:1.3rem;border-bottom:1px solid var(--rule)}
+.th-h{font-stretch:120%;font-weight:600;font-size:clamp(1.55rem,2.3vw,2.15rem);line-height:1.08;
+  letter-spacing:-.016em;color:var(--frost);margin:0 0 .55rem}
+.th .sf{margin:0}
+.th-f{display:flex;gap:2.4rem}
+.th-f div{display:flex;flex-direction:column;gap:.25rem;min-width:7rem;max-width:11rem}
+.th-f b{font-size:1.5rem;font-weight:600;font-stretch:108%;line-height:1.1;color:var(--frost);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.th-f b small{font-size:.85rem;font-weight:500;color:var(--frost2);margin-left:.22rem}
+.th-f span{color:var(--frost3);font-size:.78rem;line-height:1.4}
 
 /* Alerts, expanders, captions, charts */
 [data-testid="stAlert"],[data-testid="stAlertContainer"]{background:var(--deck)!important;
@@ -2093,52 +1969,54 @@ html,body,.stApp{color:var(--frost);font-family:var(--font)!important;
 .modebar{background:transparent!important}
 hr{border-color:var(--rule)!important}
 
-/* Masthead + hero */
-.mast{display:flex;justify-content:space-between;align-items:center;margin-bottom:2.6rem}
+/* Masthead + hero: the verdict beside the instrument read-outs */
+.mast{display:flex;justify-content:space-between;align-items:center;margin-bottom:2.4rem}
 .mast-client{color:var(--frost3);font-size:.85rem}
+.hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:3.2rem;align-items:end;
+  margin-bottom:2.2rem}
 .hero-k{display:flex;align-items:center;gap:.8rem;color:var(--frost3);font-size:.9rem}
 .chip{display:inline-flex;align-items:center;gap:.4rem;padding:.16rem .62rem .18rem;
   border:1px solid currentColor;border-radius:999px;font-size:.78rem;font-weight:600}
 .chip::before{content:"";width:.42rem;height:.42rem;border-radius:50%;background:currentColor}
-.verdict{font-stretch:118%;font-weight:600;font-size:clamp(2.1rem,3.7vw,3.4rem);line-height:1.04;
-  letter-spacing:-.018em;color:var(--frost);margin:.55rem 0 .8rem;max-width:20ch}
-.verdict-sub{color:var(--frost2)!important;font-size:1.04rem;line-height:1.6;max-width:64ch;margin:0}
+.verdict{font-stretch:120%;font-weight:600;font-size:clamp(2.2rem,3.9vw,3.6rem);line-height:1.02;
+  letter-spacing:-.02em;color:var(--frost);margin:.6rem 0 .85rem;max-width:18ch;
+  animation:rise .9s cubic-bezier(.2,.7,.1,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(16px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+.verdict-sub{color:var(--frost2)!important;font-size:1.04rem;line-height:1.6;max-width:60ch;margin:0}
 .verdict-sub span{color:var(--frost3)}
-.live{color:var(--frost3)!important;font-size:.8rem;margin:.5rem 0 0}
+.live{color:var(--frost3)!important;font-size:.8rem;margin:.6rem 0 0}
 
-/* Thermal ribbon, the signature element: surface temperature as colour */
-.ribbon{margin:2.4rem 0 0}
-.rb-cap{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
-  color:var(--frost3);font-size:.8rem;margin-bottom:.7rem}
-.rb-scale{display:inline-flex;align-items:center;gap:.5rem;font-variant-numeric:tabular-nums}
-.rb-scale i{display:inline-block;width:88px;height:6px;border-radius:3px}
-.rb-heat{position:relative;height:8px;margin-bottom:5px}
-.rb-heat i{position:absolute;bottom:0;height:4px;border-radius:2px;background:var(--heat);
-  box-shadow:0 0 10px rgba(221,106,58,.65)}
-.rb-band{height:30px;border-radius:7px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -10px 18px rgba(0,0,0,.16);
-  animation:pour 1.1s cubic-bezier(.2,.7,.1,1) both}
-@keyframes pour{from{clip-path:inset(0 100% 0 0 round 7px)}to{clip-path:inset(0 0 0 0 round 7px)}}
-.rb-zones{position:relative;height:40px;margin-top:8px}
-.rb-zones>div{position:absolute;top:0;height:100%;padding-left:7px;border-left:1px solid var(--rule2);
-  overflow:hidden;white-space:nowrap}
-.rb-zones span{display:block;color:var(--frost3);font-size:.74rem;overflow:hidden;text-overflow:ellipsis}
-.rb-zones b{display:block;color:var(--frost2);font-size:.82rem;font-weight:550;
-  font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
-.rb-axis{display:flex;justify-content:space-between;color:var(--frost3);font-size:.74rem;
-  margin-top:.3rem;font-variant-numeric:tabular-nums}
-
-/* Read-outs: one instrument line, not cards */
-.readouts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin:2rem 0 2.6rem}
-.ro{padding:.15rem 1.2rem .1rem}
-.ro:first-child{padding-left:0}
-.ro+.ro{border-left:1px solid var(--rule)}
+/* Read-outs: one instrument panel in two columns, not cards */
+.readouts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0}
+.ro{padding:.8rem 0 .75rem 1.15rem;border-left:1px solid var(--rule);border-top:1px solid var(--rule)}
+.ro:nth-child(-n+2){border-top:none;padding-top:.1rem}
 .ro-l{color:var(--frost3);font-size:.8rem}
-.ro-v{color:var(--frost);font-size:1.55rem;font-weight:600;font-stretch:108%;
-  font-variant-numeric:tabular-nums;margin:.25rem 0 .15rem;line-height:1.1;white-space:nowrap}
-.ro-v small{font-size:.9rem;font-weight:500;color:var(--frost2);margin-left:.2rem}
+.ro-v{color:var(--frost);font-size:1.5rem;font-weight:600;font-stretch:108%;
+  font-variant-numeric:tabular-nums;margin:.22rem 0 .12rem;line-height:1.1;white-space:nowrap}
+.ro-v small{font-size:.88rem;font-weight:500;color:var(--frost2);margin-left:.2rem}
 .ro-n{font-size:.78rem;color:var(--frost3)}
 .sf{color:var(--frost2)!important;font-size:.98rem;line-height:1.6;max-width:72ch;margin:0 0 1.1rem}
+
+/* Scenario cards: the native radio, restyled; strip + peak damage per card */
+[class*='st-key-sc_pick'] [role="radiogroup"]{gap:.45rem!important;flex-direction:column}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]{position:relative;display:flex!important;width:100%;
+  margin:0!important;padding:.68rem 3.1rem 1.15rem .9rem!important;border:1px solid var(--rule);
+  border-radius:12px;background:rgba(31,42,60,.32);cursor:pointer;
+  transition:border-color .16s ease,background .16s ease}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]:hover{border-color:var(--rule2);background:rgba(31,42,60,.62)}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]:has(input:checked){border-color:rgba(232,237,244,.5);
+  background:var(--deck2)}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]::before{content:"";position:absolute;left:.9rem;right:.9rem;
+  bottom:.55rem;height:3px;border-radius:2px;background:var(--strip);opacity:.9}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]::after{position:absolute;top:.7rem;right:.85rem;
+  font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]>div:first-of-type{display:none}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"] p{font-size:.86rem!important;font-weight:550;
+  color:var(--frost2)!important;line-height:1.35}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]:has(input:checked) p{color:var(--frost)!important}
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]:not(:has(input:checked)) [data-testid="stCaptionContainer"]{display:none}
+[class*='st-key-sc_pick'] [data-testid="stCaptionContainer"] p{font-size:.76rem!important;font-weight:400;
+  color:var(--frost3)!important;margin-top:.3rem}
 
 /* Surface integrity note */
 .note{display:flex;gap:.6rem 1.2rem;align-items:baseline;flex-wrap:wrap;padding:.9rem 0 .2rem;
@@ -2210,14 +2088,16 @@ hr{border-color:var(--rule)!important}
 
 @media (max-width:900px){
   [data-testid="stMainBlockContainer"],.block-container{padding:1.2rem 1rem 4rem!important}
-  .readouts{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:1.2rem}
-  .ro{padding-left:0!important;border-left:none!important}
+  .hero{grid-template-columns:1fr;gap:1.6rem}
   .mast{margin-bottom:1.6rem}
-  .rb-zones span{display:none}
+  .th{grid-template-columns:1fr;gap:1.1rem}
+  .th-f{gap:1.4rem;flex-wrap:wrap}
+  .stTabs div:has(> [data-baseweb="tab-list"]){top:3.4rem}
+  .stTabs [data-baseweb="tab"]{padding:.5rem .9rem!important}
   .msg-u>div,.msg-a{max-width:100%}
 }
 @media (prefers-reduced-motion:reduce){
-  .rb-band,.caret,.typing i{animation:none!important}
+  .verdict,.caret,.typing i,.stTabs [data-baseweb="tab-panel"]>div{animation:none!important}
 }
 </style>""", unsafe_allow_html=True)
 
@@ -2239,6 +2119,7 @@ hr{border-color:var(--rule)!important}
                    params["reheat"].get("mode","sequential"),
                    params["reheat"].get("pulses",0), params["reheat"].get("pulse_sec",0),
                    params["reheat"].get("pulse_window",0)),
+        "bursts": params["reheat"].get("bursts") or [],
         "h_cool": params["h_cool"], "h_reheat": params["h_reheat"],
         "melt": params.get("melt"), "late": params.get("late_cool_T"),
     }, sort_keys=True)
@@ -2271,31 +2152,17 @@ hr{border-color:var(--rule)!important}
     # so the hero always shows the current recipe; no separate Compute step.
     if ats:
         st.markdown(_hero_html(DI_live, ats, params, heal_live), unsafe_allow_html=True)
+        _studio(ats, params)
 
     # ─── TABS ─────────────────────────────────────────────────────────────────
-    tab1,tab2,tab3,tab4,tab5 = st.tabs([
-        t("tab_belt"), t("tab_temp"), t("tab_crack"),
-        t("tab_results"), t("tab_advisor"),
+    tab2,tab3,tab4,tab5 = st.tabs([
+        t("tab_temp"), t("tab_crack"), t("tab_results"), t("tab_advisor"),
     ])
     _cfg3d = {"displayModeBar":True,"displaylogo":False,"scrollZoom":True,
               "modeBarButtonsToRemove":["pan3d","tableRotation"]}
 
-    # ══ TAB 1: Production line ═══════════════════════════════════════════════
-    with tab1:
-        st.markdown(f"<p class='sf'>{t('sf_belt')}</p>", unsafe_allow_html=True)
-        ts_b = ats if ats else build_timeline(params["T_fill"],params["zones"],
-            params["reheat"],params["h_cool"],params["h_reheat"],n_pts=60,
-            melt=params.get("melt"),late_cool_T=params.get("late_cool_T"))
-        belt = fig_belt(ts_b,params["zones"],params["reheat"],
-                        params["h_cool"],params["h_reheat"],n_frames=40)
-        # Stable key + figure uirevision => camera rotation/zoom is preserved
-        # across timeline drags AND Streamlit reruns (no more snap-to-default).
-        st.plotly_chart(belt, width='stretch', key="belt3d", config=_cfg3d)
-        export_figure_panel(belt, "uturn_belt", "exp_belt")
-
     # ══ TAB 2: Thermal history ═══════════════════════════════════════════════
     with tab2:
-        st.markdown(f"<p class='sf'>{t('sf_temp')}</p>", unsafe_allow_html=True)
         if ats:
             ts_use=ats
         else:
@@ -2303,13 +2170,14 @@ hr{border-color:var(--rule)!important}
                 ts_use=build_timeline(params["T_fill"],params["zones"],params["reheat"],
                                       params["h_cool"],params["h_reheat"],n_pts=120,
                                       melt=params.get("melt"),late_cool_T=params.get("late_cool_T"))
-        charts=fig_charts(ts_use,params.get("_scenario",""))
+        st.markdown(_thermal_head(ts_use), unsafe_allow_html=True)
+        charts=_charts_cached((_hash,st.session_state.get("lang","en")),ts_use,
+                              params.get("_scenario",""))
         st.plotly_chart(charts,width='stretch',key="charts2d",config={"displaylogo":False})
         export_figure_panel(charts, "temperature_DI", "exp_temp")
 
     # ══ TAB 3: Surface integrity ═════════════════════════════════════════════
     with tab3:
-        st.markdown(f"<p class='sf'>{t('sf_crack')}</p>", unsafe_allow_html=True)
         ts_cr = ats if ats else ts_use
         ta_   = np.array(ts_cr["times"]); DI_   = np.array(ts_cr["DI"])
         spans = _reheat_spans(ts_cr)
@@ -2324,6 +2192,12 @@ hr{border-color:var(--rule)!important}
         tb_    = float(ta_[ib]); ta2_=float(ta_[ia])
         hdrop  = DIb-DIa
         CRACK_TH = 0.25   # cracks show from Caution up, matching the risk bands
+        _lbl_a = t("after_reheat") if has_reheat else t("end_cycle")
+        st.markdown(_tab_head(t("th_crack"), t("sf_crack"), [
+            (f"{DIb:.3f}", f"{t('before_reheat')}, {t('f_at').format(t=tb_)}", _rcol(DIb)),
+            (f"{DIa:.3f}", f"{_lbl_a}, {t('f_at').format(t=ta2_)}", _rcol(DIa)),
+            (f"{hdrop:.3f}" if has_reheat else "–", t("ro_heal"), None)]),
+            unsafe_allow_html=True)
 
         def crack3d(DI_v, ttl):
             H_c=H_M*100; R_c=R_M*100
@@ -2419,9 +2293,7 @@ hr{border-color:var(--rule)!important}
             extra=(f"<span class='ok'>{t('crack_free')}</span>"
                    if DIa < CRACK_TH <= DIb else "")
             st.markdown(
-                f"<div class='note'><b>{t('healed_by')} {hdrop:.3f}</b>"
-                f"<span>{DIb:.3f} → {DIa:.3f}</span>"
-                f"<span>{t('healing_eff')} {eff}%</span>"
+                f"<div class='note'><b>{t('healing_eff')} {eff}%</b>"
                 f"<span>{t('optimal_healing') if params['reheat']['T']>=62 else t('softening_only')}</span>"
                 f"{extra}</div>", unsafe_allow_html=True)
         elif not has_reheat:
@@ -2434,7 +2306,7 @@ hr{border-color:var(--rule)!important}
 
     # ══ TAB 4: Report ════════════════════════════════════════════════════════
     with tab4:
-        st.markdown(f"<p class='sf'>{t('sf_report')}</p>", unsafe_allow_html=True)
+        st.markdown(_tab_head(t("th_report"), t("sf_report")), unsafe_allow_html=True)
         if ats:
             show_results(ats,params)
         else:
@@ -2442,7 +2314,7 @@ hr{border-color:var(--rule)!important}
 
     # ══ TAB 5: AI Advisor ═══════════════════════════════════════════════════════
     with tab5:
-        st.markdown(f"<p class='sf'>{t('sf_advisor')}</p>", unsafe_allow_html=True)
+        st.markdown(_tab_head(t("th_advisor"), t("sf_advisor")), unsafe_allow_html=True)
 
         # ── Load advisor (cached, but version-keyed so retraining doesn't
         #    need a page reload — bumping advisor_version creates a fresh
