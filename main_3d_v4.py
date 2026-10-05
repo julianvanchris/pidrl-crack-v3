@@ -204,6 +204,76 @@ def _sync_pattern(reh):
         reh["pulse_sec"] = int(np.clip(round(np.mean([d for _, d in b]) / 5) * 5, 5, 60))
         reh["pulse_window"] = float(np.clip(round(max(s + d / 60.0 for s, d in b) * 2) / 2, 2.0, 15.0))
 
+# ── Optimiser (the "DRL" search in the UI) ──────────────────────────────────
+_MODE_KEY = {"none": "mode_none", "sequential": "mode_seq",
+             "simultaneous": "mode_sim", "pulsed": "mode_pul"}
+
+def _reheat_kind(reh):
+    """Reheat timing of a recipe: none, sequential, simultaneous or pulsed."""
+    if reh.get("mode") == "pulsed":
+        return "pulsed"
+    if float(reh.get("duration", 0) or 0) <= 0:
+        return "none"
+    return reh.get("mode", "sequential")
+
+def _zone_plan(T_fill, nz, dist, budget):
+    """nz cooling zones from the fill toward the target: time spread evenly,
+    front-loaded (top_heavy), or held in the mushy band (mushy_dwell)."""
+    if dist == "top_heavy":
+        temps = [T_fill - (T_fill - T_TARGET) * (((k + 1) / nz) ** 0.55) for k in range(nz)]
+    else:
+        step = (T_fill - T_TARGET) / nz
+        temps = [T_fill - (k + 1) * step for k in range(nz)]
+    if dist == "mushy_dwell":
+        raw = [6.0 if 55 <= T <= 75 else 3.0 for T in temps]
+        durs = [d * budget / sum(raw) for d in raw]
+    else:
+        durs = [budget / nz] * nz
+    return [{"T": round(T, 1), "duration": round(d, 1), "label": f"Zone {k + 1}"}
+            for k, (T, d) in enumerate(zip(temps, durs))]
+
+def optimise(T_fill, reh0, h_cool0, h_reh0, melt, late, scope="all"):
+    """Lowest-damage recipe within a 30 min cycle, by grid search.
+    scope="cooling": keep the given top reheat exactly (none, after cooling,
+    during cooling, or any burst pattern placed by hand) and change only the
+    cooling zones and air flow. scope="all": also try every reheat timing and
+    its settings; the given reheat stays one of the candidates.
+    Returns {reheat kind: best candidate}."""
+    reh0 = {k: ([list(b) for b in v] if k == "bursts" else v) for k, v in reh0.items()}
+    cands = [(_reheat_kind(reh0), reh0, [float(h_reh0)])]
+    if scope == "all":
+        for T in (65.0, 72.0, 78.0, 85.0, 92.0, 100.0, 110.0):
+            for m in ("sequential", "simultaneous"):
+                cands.append((m, {"T": T, "duration": 10.0, "mode": m}, [12.0, 18.0, 25.0]))
+        for T in (95.0, 105.0):
+            for npul in (3, 5, 7):
+                cands.append(("pulsed", {"T": T, "duration": 0.0, "mode": "pulsed", "pulses": npul,
+                                         "pulse_sec": 20, "pulse_window": 5.0}, [18.0, 25.0]))
+    best = {}
+    for kind, reh, h_rehs in cands:
+        overlap = kind != "sequential"            # reheat overlaps cooling, or there is none
+        budget = 27.0 if overlap else 30.0 - float(reh.get("duration", 0)) - 3.0
+        lean = kind == "pulsed"                   # bursts need a finer time grid: keep it lean
+        for h_reh in h_rehs:
+            for h_c in (float(h_cool0), max(2.0, float(h_cool0) * 0.6)):
+                for nz in ((3, 4) if lean else (3, 4, 5)):
+                    for dist in (("mushy_dwell", "top_heavy") if lean
+                                 else ("mushy_dwell", "linear", "top_heavy")):
+                        zones = _zone_plan(T_fill, nz, dist, budget)
+                        try:
+                            tt = build_timeline(T_fill, zones, reh, h_c, h_reh, n_pts=80,
+                                                melt=melt, late_cool_T=late)
+                        except Exception:
+                            continue
+                        if tt["t_total"] > 30.5:
+                            continue
+                        pk = max(tt["DI"]); score = 0.6 * pk + 0.4 * float(tt["DI"][-1])
+                        if score < best.get(kind, {}).get("score", float("inf")):
+                            best[kind] = dict(score=score, di=float(pk), t=float(tt["t_total"]),
+                                              mode=kind, zones=zones, reh=dict(reh),
+                                              h_cool=h_c, h_reh=h_reh)
+    return best
+
 def _rlbl(d):
     if d>=0.80: return "CRITICAL"
     if d>=0.50: return "WARNING"
@@ -362,10 +432,10 @@ TR = {
     "sb_biot": "Biot {b:.2f}, even below 0.5",
     "sb_rate": "Average cooling {r:.1f} °C/min, gentle above −5",
     "drl_optimiser": "Optimise",
-    "drl_help": ("Searches over 500 recipes for the lowest damage within 30 minutes, for each "
-                 "reheat timing. The result for your current timing is applied."),
+    "drl_help": ("Searches cooling zones, air flow and, if allowed, the top reheat for the lowest "
+                 "damage within 30 minutes. Works with any top reheat, including bursts placed by hand."),
     "drl_run": "Find the best recipe",
-    "drl_spin": "Searching recipes for all three reheat timings…",
+    "drl_spin": "Searching recipes…",
     "drl_done": "Applied the best recipe for {mode}: damage index {di:.3f}, {t:.0f} min.",
     "drl_compare": "Best result for each timing",
     "mode_seq": "after cooling", "mode_sim": "during cooling", "mode_pul": "pulsed bursts",
@@ -393,6 +463,38 @@ TR = {
     "ls_canvas": "Production line in 3D. Sticks are coloured by temperature.",
     "ls_slider": "Time in the cycle",
     "belt_bursts": "{n} bursts of {s} s at {T:.0f} °C",
+    "ls_cmp": "Compare", "ls_cmp_mine": "Your recipe", "ls_cmp_worst": "Worst case",
+    "ls_cmp_best": "Best option", "ls_cmp_cap": "{name}, {t} min cycle",
+    "ls_damage_lane": "Damage index",
+    "ls_cracks": "Cracks on the top surface", "ls_healing": "Hot air is healing the cracks",
+    "opt_drl": "Optimiser best, {mode}", "mode_none": "no reheat",
+    "opt_scope": "What the optimiser may change",
+    "opt_scope_cooling": "Cooling only, keep my top reheat",
+    "opt_scope_all": "Cooling and top reheat",
+    "tab_cases": "Cases",
+    "th_cases": "Every case, from worst to best",
+    "sf_cases": ("Each preset grouped by its peak damage index and cycle time, with the reason. "
+                 "Optimise runs the search from that case; what it may change is set in step 7."),
+    "cat_worst": "Worst case", "cat_work": "Needs work", "cat_good": "Good", "cat_best": "Best option",
+    "cat_worst_d": "Highest damage of all",
+    "cat_work_d": "Cracks expected, or over 30 min",
+    "cat_good_d": "No cracks expected, within 30 min",
+    "cat_best_d": "Lowest damage within 30 min",
+    "why_none": "No reheat: the skin sets over a still-liquid core and nothing re-melts it.",
+    "why_sequential": "Reheat after cooling heals part of the damage, but only after it has formed.",
+    "why_simultaneous": ("Top reheat during cooling keeps the surface warmer than the core, so no "
+                         "skin sets over a liquid pocket."),
+    "why_pulsed": "Short hot-air bursts re-melt the skin as it forms; the result depends on their timing.",
+    "why_biot": "Strong air flow (Biot {b:.2f}) cools the skin too fast.",
+    "why_slow": "The cycle takes {t:.0f} min, over the 30 min target.",
+    "why_cracks": "Peak damage {di:.2f} passes 0.25, so cracks are expected.",
+    "cs_scope": "Optimiser setting: {s}. Change it in step 7.",
+    "cs_opt_all": "Optimise every case", "cs_load": "Load", "cs_opt": "Optimise",
+    "cs_load_opt": "Load optimised", "cs_optimised": "Optimised",
+    "cs_cycle": "{t:.0f} min cycle", "cs_none": "None at the moment.",
+    "cs_need_reheat": ("With this top reheat kept, cooling alone cannot get below 0.25. Allow the top "
+                       "reheat to change in step 7."),
+    "f_yours": "Your recipe, {cat}",
     # Burst editor (sidebar)
     "burst_list": "Burst times ({n})",
     "burst_at": "Burst {n}, min", "burst_len": "Seconds",
@@ -572,10 +674,10 @@ TR = {
     "sb_biot": "ビオ数 {b:.2f}（0.5未満で均一）",
     "sb_rate": "平均冷却 {r:.1f} ℃/分（−5より緩やかが目安）",
     "drl_optimiser": "最適化",
-    "drl_help": ("再加熱のタイミングごとに、30分以内で損傷が最小となる条件を500通り以上から"
-                 "探索します。現在のタイミングの結果が適用されます。"),
+    "drl_help": ("30分以内で損傷が最小となる冷却ゾーン、風量、そして許可した場合は上面再加熱を"
+                 "探索します。手動で配置したバーストを含め、どの上面再加熱にも対応します。"),
     "drl_run": "最適な条件を探す",
-    "drl_spin": "3つの再加熱タイミングで条件を探索しています…",
+    "drl_spin": "条件を探索しています…",
     "drl_done": "「{mode}」の最適条件を適用しました。損傷指数 {di:.3f}、{t:.0f} 分。",
     "drl_compare": "タイミング別の最良結果",
     "mode_seq": "冷却後", "mode_sim": "冷却と同時", "mode_pul": "パルス加熱",
@@ -602,6 +704,36 @@ TR = {
     "ls_canvas": "生産ラインの3D表示。スティックは温度で色分けされています。",
     "ls_slider": "サイクル内の時間",
     "belt_bursts": "{T:.0f} ℃のバースト{s}秒×{n}回",
+    "ls_cmp": "比較", "ls_cmp_mine": "現在の条件", "ls_cmp_worst": "最悪のケース",
+    "ls_cmp_best": "最良の選択肢", "ls_cmp_cap": "{name}、サイクル{t}分",
+    "ls_damage_lane": "損傷指数",
+    "ls_cracks": "上面に亀裂", "ls_healing": "熱風が亀裂を修復中",
+    "opt_drl": "最適化の最良（{mode}）", "mode_none": "再加熱なし",
+    "opt_scope": "最適化で変更する範囲",
+    "opt_scope_cooling": "冷却のみ（上面再加熱はそのまま）",
+    "opt_scope_all": "冷却と上面再加熱",
+    "tab_cases": "ケース",
+    "th_cases": "すべてのケース（悪い順）",
+    "sf_cases": ("各プリセットを最大損傷指数とサイクル時間で分類し、理由を示します。「最適化」はそのケースから"
+                 "探索を行います。変更する範囲は手順7で設定します。"),
+    "cat_worst": "最悪のケース", "cat_work": "要改善", "cat_good": "良好", "cat_best": "最良の選択肢",
+    "cat_worst_d": "損傷が最も大きい",
+    "cat_work_d": "亀裂のおそれ、または30分超",
+    "cat_good_d": "亀裂なし、30分以内",
+    "cat_best_d": "30分以内で損傷が最小",
+    "why_none": "再加熱なし：内部がまだ液体のうちに表皮が固まり、再溶融されません。",
+    "why_sequential": "冷却後の再加熱は損傷の一部を修復しますが、損傷ができた後になります。",
+    "why_simultaneous": "冷却中の上面再加熱で表面が内部より温かく保たれ、液体の上に表皮が固まりません。",
+    "why_pulsed": "短い熱風バーストが固まりかけた表皮を再溶融します。結果はタイミング次第です。",
+    "why_biot": "風が強く（ビオ数 {b:.2f}）、表皮が速く冷えすぎます。",
+    "why_slow": "サイクルが{t:.0f}分で、目標の30分を超えます。",
+    "why_cracks": "最大損傷指数{di:.2f}が0.25を超えるため、亀裂が予想されます。",
+    "cs_scope": "最適化の設定：{s}。手順7で変更できます。",
+    "cs_opt_all": "すべて最適化", "cs_load": "読込", "cs_opt": "最適化",
+    "cs_load_opt": "最適化後を読込", "cs_optimised": "最適化後",
+    "cs_cycle": "サイクル{t:.0f}分", "cs_none": "現在は該当なし。",
+    "cs_need_reheat": "この上面再加熱のままでは、冷却だけで0.25未満にできません。手順7で再加熱の変更を許可してください。",
+    "f_yours": "現在の条件：{cat}",
     # Burst editor (sidebar)
     "burst_list": "バーストの時刻（{n}回）",
     "burst_at": "バースト{n}（分）", "burst_len": "秒",
@@ -1280,21 +1412,27 @@ def sidebar():
         horizontal=True, key="lang_sel")
     st.session_state.lang = _lang_map[_sel]
 
-    # 1 ─ Starting point: preset cards, each with its surface-temperature strip
+    # 1 ─ Starting point: preset cards sorted worst case to best option, each
+    # with its category, surface-temperature strip and peak damage index
     _sh(t("step_start"))
-    names = list(SCENARIOS)
+    cats = {o["id"]: o for o in _categorise(_options(drl=False))}
+    rank = {"worst": 0, "work": 1, "good": 2, "best": 3}
+    names = sorted(SCENARIOS, key=lambda k: (rank[cats[k]["cat"]], -cats[k]["peak"]))
     cur = st.session_state.get("sc_cur")
     if cur not in SCENARIOS:
-        cur = names[2]
+        cur = list(SCENARIOS)[2]
     # One radio per language: a radio whose labels change is re-created and
-    # loses its selection on the page, so the pick lives in sc_cur.
-    sc_name = st.sidebar.radio(t("preset"), names, index=names.index(cur),
-                               key="sc_pick_" + st.session_state.get("lang", "en"),
-                               format_func=_sc_text,
+    # loses its selection on the page, so the pick lives in sc_cur. The widget
+    # is seeded through session state (no index) so other views can set it.
+    lang = st.session_state.get("lang", "en"); rkey = "sc_pick_" + lang
+    if st.session_state.get(rkey) not in SCENARIOS or st.session_state.get("_sc_lang") != lang:
+        st.session_state[rkey] = cur
+    st.session_state._sc_lang = lang
+    sc_name = st.sidebar.radio(t("preset"), names, key=rkey, format_func=_sc_text,
                                captions=[_sc_text(k, desc=True) for k in names],
                                label_visibility="collapsed")
     st.session_state.sc_cur = sc_name
-    st.sidebar.markdown(_scenario_css(names), unsafe_allow_html=True)
+    st.sidebar.markdown(_scenario_css(names, cats), unsafe_allow_html=True)
     # Auto-load when the pick changes; Reload restores the preset after edits.
     if (st.session_state.get("last_sc") != sc_name
             or st.sidebar.button(t("load_preset"), width='stretch')):
@@ -1438,108 +1576,40 @@ def sidebar():
         f"<div><i style='background:{RISK_COL['SAFE'] if ok else RISK_COL['CAUTION']}'></i>"
         f"{txt}</div>" for ok,txt in _rows)+"</div>", unsafe_allow_html=True)
 
-    # 7 ─ Optimise (DRL search over all three reheat timings)
+    # 7 ─ Optimise: keep the top reheat exactly as set (any timing, temperature
+    # or hand-placed bursts) and tune the cooling, or let the reheat change too
     _sh(t("drl_optimiser"))
     st.sidebar.caption(t("drl_help"))
+    _scopes = ["cooling", "all"]
+    _skey = "opt_scope_" + st.session_state.get("lang", "en")
+    if st.session_state.get(_skey) not in _scopes:
+        st.session_state[_skey] = st.session_state.get("opt_scope_v", "all")
+    scope = st.sidebar.radio(t("opt_scope"), _scopes, key=_skey,
+                             format_func=lambda s: t("opt_scope_" + s))
+    st.session_state.opt_scope_v = scope
     if st.sidebar.button(t("drl_run"), type="primary", width='stretch'):
         with st.spinner(t("drl_spin")):
-            T_fill_drl=T_fill; reh_dur=10.0
-            # Optimise the schedule for ALL THREE reheat timings independently,
-            # so we can report each option's best. The applied result uses the
-            # timing currently selected on the radio — the DRL run never flips
-            # the user's radio choice.
-            best={"sequential":{"score":float("inf")},
-                  "simultaneous":{"score":float("inf")},
-                  "pulsed":{"score":float("inf")}}
-            def _reh_grid(mode):
-                if mode=="pulsed":     # toggled bursts — lean grid (pulses/T/window)
-                    for T_reh in (95.0,105.0):
-                        for npul in (3,5,7):
-                            for win in (5.0,):
-                                yield {"T":T_reh,"duration":0.0,"mode":"pulsed",
-                                       "pulses":npul,"pulse_sec":20,"pulse_window":win}
-                else:
-                    for T_reh in (65.0,72.0,78.0,85.0,92.0,100.0,110.0):
-                        yield {"T":T_reh,"duration":reh_dur,"mode":mode}
-            for mode in ("sequential","simultaneous","pulsed"):
-                overlap = mode in ("simultaneous","pulsed")   # reheat overlaps cooling
-                cool_budget = (30.0-3.0) if overlap else (30.0-reh_dur-3.0)
-                _hr_grid = [18.0,25.0] if mode=="pulsed" else [12.0,18.0,25.0]
-                _nz_grid = [3,4] if mode=="pulsed" else [3,4,5]
-                _dist_grid = ["mushy_dwell","top_heavy"] if mode=="pulsed" else ["mushy_dwell","linear","top_heavy"]
-                for reh_base in _reh_grid(mode):
-                    for h_reh_t in _hr_grid:
-                        for h_cool_t in [h_cool, max(2.0,h_cool*0.6)]:
-                            for nz in _nz_grid:
-                                for dist in _dist_grid:
-                                    if dist=="linear":
-                                        step=(T_fill_drl-T_TARGET)/nz
-                                        temps=[T_fill_drl-(k+1)*step for k in range(nz)]
-                                        durs=[cool_budget/nz]*nz
-                                    elif dist=="top_heavy":
-                                        temps=[T_fill_drl-(T_fill_drl-T_TARGET)*(((k+1)/nz)**0.55) for k in range(nz)]
-                                        durs=[cool_budget/nz]*nz
-                                    else:  # mushy_dwell
-                                        step=(T_fill_drl-T_TARGET)/nz
-                                        temps=[T_fill_drl-(k+1)*step for k in range(nz)]
-                                        raw=[6.0 if 55<=T<=75 else 3.0 for T in temps]
-                                        s=cool_budget/sum(raw); durs=[d*s for d in raw]
-                                    t_c=sum(durs)
-                                    t_f=(30.0-t_c) if overlap else (30.0-t_c-reh_dur)
-                                    if t_f<1.5: continue  # skip infeasible
-                                    tz=[{"T":round(T,1),"duration":round(d,1),"label":f"Zone {k+1}"} for k,(T,d) in enumerate(zip(temps,durs))]
-                                    reh_t=dict(reh_base)
-                                    try:
-                                        tt=build_timeline(T_fill_drl,tz,reh_t,h_cool_t,h_reh_t,
-                                                          n_pts=80,melt=melt,late_cool_T=late_cool_T)
-                                        if tt["t_total"]>30.5: continue  # hard reject
-                                        DI_pk=max(tt["DI"]); DI_fin=float(tt["DI"][-1])
-                                        score=0.6*DI_pk+0.4*DI_fin
-                                        if score<best[mode]["score"]:
-                                            best[mode]={"score":score,"zones":tz,"reh":reh_t,
-                                                        "h_reh":h_reh_t,"h_cool":h_cool_t,
-                                                        "di":DI_pk,"ttot":float(tt["t_total"])}
-                                    except: pass
-
-            # Apply the optimum for the CURRENTLY selected timing (keeps the
-            # radio put). Fall back to any timing that found a solution otherwise.
-            _cur=reh.get("mode","sequential")
-            apply=best[_cur] if best[_cur].get("zones") else None
-            if apply is None:
-                for other in ("simultaneous","pulsed","sequential"):
-                    if best[other].get("zones"): apply=best[other]; _cur=other; break
-            if apply and apply.get("zones"):
-                best_z=apply["zones"]; best_r=apply["reh"]
-                best_h_reh=apply["h_reh"]; best_h_cool=apply["h_cool"]
-                tt_opt=build_timeline(T_fill_drl,best_z,best_r,best_h_cool,best_h_reh,
-                                      n_pts=120,melt=melt,late_cool_T=late_cool_T)
-                st.session_state.zones=   [dict(z) for z in best_z]
-                st.session_state.reheat=  dict(best_r)   # mode=_cur → radio stays put
-                st.session_state.h_reheat=best_h_reh
-                st.session_state.h_cool=  best_h_cool
-                st.session_state.zone_version=st.session_state.get("zone_version",0)+1
-                st.session_state.sim_ts=  tt_opt
-                st.session_state.sim_done=True
-                st.session_state.drl_ts=  tt_opt
-                st.session_state.drl_done=True
-                st.session_state.drl_zones=[dict(z) for z in best_z]
-                st.session_state.drl_reh= dict(best_r)
-                # Kept in session state so the comparison survives the rerun.
-                st.session_state.drl_report={
-                    "mode":_cur,"di":max(tt_opt["DI"]),"t":tt_opt["t_total"],
-                    "best":{m:({"di":best[m]["di"],"t":best[m]["ttot"]}
-                               if best[m].get("zones") else None) for m in best}}
-                st.rerun()
-    rep=st.session_state.get("drl_report")
+            best = optimise(T_fill, reh, h_cool, h_reh, melt, late_cool_T, scope)
+        if best:
+            # Apply the best for the current reheat timing (the radio stays put);
+            # the other timings' results are listed and shown in the 3D compare.
+            pick = best.get(_reheat_kind(reh)) or min(best.values(), key=lambda b: b["score"])
+            _apply_recipe(pick, T_fill, melt, late_cool_T)
+            st.session_state.drl_best = {
+                m: dict(zones=b["zones"], reh=b["reh"], h_cool=b["h_cool"], h_reh=b["h_reh"],
+                        T_fill=T_fill, melt=melt, late=late_cool_T) for m, b in best.items()}
+            st.session_state.drl_report = {
+                "mode": pick["mode"], "di": pick["di"], "t": pick["t"],
+                "best": {m: {"di": b["di"], "t": b["t"]} for m, b in best.items()}}
+            st.rerun()
+    rep = st.session_state.get("drl_report")
     if rep:
-        names={"sequential":t("mode_seq"),"simultaneous":t("mode_sim"),"pulsed":t("mode_pul")}
-        rows="".join(
-            f"<tr class='{'cur' if m==rep['mode'] else ''}'><td>{names[m]}</td>"
-            + (f"<td>{b['di']:.3f}</td><td>{b['t']:.0f} {t('min')}</td>" if b
-               else f"<td colspan='2'>{t('drl_na')}</td>") + "</tr>"
-            for m,b in rep["best"].items())
+        rows = "".join(
+            f"<tr class='{'cur' if m == rep['mode'] else ''}'><td>{t(_MODE_KEY[m])}</td>"
+            f"<td>{b['di']:.3f}</td><td>{b['t']:.0f} {t('min')}</td></tr>"
+            for m, b in sorted(rep["best"].items(), key=lambda kv: kv[1]["di"]))
         st.sidebar.markdown(
-            f"<div class='drl-rep'><p>{t('drl_done').format(mode=names[rep['mode']],di=rep['di'],t=rep['t'])}</p>"
+            f"<div class='drl-rep'><p>{t('drl_done').format(mode=t(_MODE_KEY[rep['mode']]), di=rep['di'], t=rep['t'])}</p>"
             f"<div class='drl-cap'>{t('drl_compare')}</div><table>{rows}</table></div>",
             unsafe_allow_html=True)
 
@@ -1752,33 +1822,122 @@ def _load_scenario(name):
     ss.T_fill = sc.get("T_fill", 80.0); ss.melt = sc.get("melt", 67.0)
     ss.late_cool_T = sc.get("late_cool_T", 23.0)
     ss.last_sc = name
-    ss.pop("drl_report", None)
+    ss.pop("drl_report", None); ss.pop("drl_best", None)
     # New widget keys, so stale zone and burst inputs are discarded
     ss.zone_version = ss.get("zone_version", 0) + 1
 
 @st.cache_data(show_spinner=False)
+def _preset_ts(name):
+    """Timeline of a preset (cached: presets never change)."""
+    sc = SCENARIOS[name]
+    return build_timeline(sc["T_fill"], sc["zones"], sc["reheat"], sc["h_cool"],
+                          sc.get("h_reheat", 12.0), n_pts=120,
+                          melt=sc.get("melt"), late_cool_T=sc.get("late_cool_T"))
+
+@st.cache_data(show_spinner=False)
+def _recipe_ts(recipe_json):
+    """Timeline of an optimiser recipe (JSON, so it can be the cache key)."""
+    r = json.loads(recipe_json)
+    return build_timeline(r["T_fill"], r["zones"], r["reh"], r["h_cool"], r["h_reh"],
+                          n_pts=120, melt=r.get("melt"), late_cool_T=r.get("late"))
+
+@st.cache_data(show_spinner=False)
 def _scenario_preview(name):
     """Surface-temperature strip (CSS gradient stops) and peak damage of a preset."""
-    sc = SCENARIOS[name]
-    ts = build_timeline(sc["T_fill"], sc["zones"], sc["reheat"], sc["h_cool"],
-                        sc.get("h_reheat", 12.0), n_pts=120,
-                        melt=sc.get("melt"), late_cool_T=sc.get("late_cool_T"))
+    ts = _preset_ts(name)
     tt = np.asarray(ts["times"], float); Ts = np.asarray(ts["T_surf"], float)
     T = float(tt[-1]) or 1.0
     idx = np.unique(np.linspace(0, len(tt) - 1, 28).astype(int))
     return ",".join(f"{_heat(Ts[i])} {100*tt[i]/T:.1f}%" for i in idx), float(max(ts["DI"]))
 
-def _scenario_css(names):
-    """Per-card CSS: a strip of the preset's surface temperature and its peak
-    damage index in the risk colour. The radio itself stays native."""
+CAT_COL = {"worst": RISK_COL["CRITICAL"], "work": RISK_COL["CAUTION"],
+           "good": RISK_COL["SAFE"], "best": RISK_COL["SAFE"]}
+
+def _options(drl=True):
+    """The presets and, once the optimiser has run, its best recipe for each
+    reheat timing: timeline, peak damage index and cycle time of each."""
+    out = [dict(id=k, name=_sc_text(k), ts=_preset_ts(k), h_cool=SCENARIOS[k]["h_cool"])
+           for k in SCENARIOS]
+    if drl:
+        for m, r in (st.session_state.get("drl_best") or {}).items():
+            out.append(dict(id="drl_" + m, name=t("opt_drl").format(mode=t(_MODE_KEY[m])),
+                            ts=_recipe_ts(json.dumps(r, sort_keys=True)), h_cool=r["h_cool"]))
+    for o in out:
+        o["peak"] = float(max(o["ts"]["DI"])); o["cycle"] = float(o["ts"]["t_total"])
+        o["seed"] = sum(map(ord, o["id"])) % 9973
+    return out
+
+def _worst_best(opts):
+    """Worst = highest peak damage. Best = lowest peak damage among options
+    that keep the 30 min cycle (any option if none does)."""
+    worst = max(opts, key=lambda o: o["peak"])
+    ok = [o for o in opts if o["cycle"] <= 30.5] or opts
+    return worst, min(ok, key=lambda o: (o["peak"], o["cycle"]))
+
+def _categorise(opts):
+    """Worst case, needs work (cracks expected or over 30 min), good (no
+    cracks within 30 min) and the single best option."""
+    worst, best = _worst_best(opts)
+    for o in opts:
+        o["cat"] = ("worst" if o is worst else "best" if o is best
+                    else "good" if o["peak"] < 0.25 and o["cycle"] <= 30.5 else "work")
+    return opts
+
+def _why(o):
+    """Plain reason for a case's result, from its reheat, air flow and cycle."""
+    ts = o["ts"]
+    kind = ts.get("reheat_mode", "sequential") if float(ts["t_reheat"]) > 0 else "none"
+    parts = [t("why_" + kind)]
+    bi = float(o["h_cool"]) * R_M / K_TH
+    if bi > 0.5:
+        parts.append(t("why_biot").format(b=bi))
+    if o["cycle"] > 30.5:
+        parts.append(t("why_slow").format(t=o["cycle"]))
+    if o["peak"] >= 0.25:
+        parts.append(t("why_cracks").format(di=o["peak"]))
+    return " ".join(parts)
+
+def _crack_glyph(di, seed):
+    """Top view of a stick with cracks grown to the damage index, by the same
+    rule as the 3D line (none below 0.25, complete by 0.6)."""
+    rng = np.random.default_rng(seed); c, R = 17.0, 14.0
+    f = 0.18 + 0.82 * min(1.0, (di - 0.25) / 0.35) if di >= 0.25 else 0.0
+    paths = []
+    if f > 0:
+        arms = 3 + int(round(f * 2))
+        for k in range(arms):
+            ang = 2 * np.pi * k / arms + rng.uniform(-0.45, 0.45); x = y = 0.0
+            pts = [(c, c)]
+            for _ in range(int(2 + f * 6)):
+                ang += rng.uniform(-0.45, 0.45); step = R * rng.uniform(0.12, 0.19)
+                x += np.cos(ang) * step; y += np.sin(ang) * step
+                if np.hypot(x, y) > R * 0.96:
+                    break
+                pts.append((c + x, c + y))
+            paths.append("M" + " L".join(f"{px:.1f} {py:.1f}" for px, py in pts))
+    col = _rcol(di)
+    ring = RISK_COL["SAFE"] if f == 0 else "rgba(205,219,240,.22)"
+    return ("<svg class='rk-g' viewBox='0 0 34 34' aria-hidden='true'>"
+            f"<circle cx='17' cy='17' r='14' fill='#1F2A3C' stroke='{ring}' stroke-width='1.2'/>"
+            + "".join(f"<path d='{p}' fill='none' stroke='#0d0a08' stroke-width='3.2' "
+                      f"stroke-linecap='round' stroke-opacity='.75'/><path d='{p}' fill='none' "
+                      f"stroke='{col}' stroke-width='1.5' stroke-linecap='round'/>" for p in paths)
+            + "</svg>")
+
+def _scenario_css(names, cats):
+    """Per-card CSS: the category above the name, a strip of the preset's
+    surface temperature and its peak damage index in the risk colour. The
+    radio itself stays native; direct children of the group are the cards in
+    both radio builds (Baseweb label up to ~1.58, React Aria div in 1.65+)."""
     rules = []
     for k, n in enumerate(names, 1):
         stops, di = _scenario_preview(n)
-        # Direct children of the group are the cards in both radio builds
-        # (Baseweb label up to ~1.58, React Aria wrapper div in 1.65+).
+        cat = cats[n]["cat"]
         sel = f"[class*='st-key-sc_pick'] [role='radiogroup']>*:nth-child({k})"
         rules.append(f"{sel}{{--strip:linear-gradient(90deg,{stops})}}"
-                     f"{sel}::after{{content:'{di:.2f}';color:{_rcol(di)}}}")
+                     f"{sel}::after{{content:'{di:.2f}';color:{_rcol(di)}}}"
+                     f"{sel} [data-testid='stMarkdownContainer'] p::before"
+                     f"{{content:'{t('cat_' + cat)}';color:{CAT_COL[cat]}}}")
     return "<style>" + "".join(rules) + "</style>"
 
 def _bump_bursts():
@@ -1799,30 +1958,127 @@ def _on_studio():
     reh["mode"] = "pulsed"; reh["custom"] = True
     _sync_pattern(reh); _bump_bursts()
 
-def _studio(ts, params):
-    reh = params["reheat"]; mode = ts.get("reheat_mode", "sequential")
+def _view(ts, bursts=None):
+    """One timeline in the shape the 3D line expects."""
+    mode = ts.get("reheat_mode", "sequential")
     rnd = lambda a, k: [round(float(x), k) for x in a]
+    if bursts is None:
+        bursts = [[round(s, 3), int(round((e - s) * 60))] for s, e in ts.get("bursts", [])]
+    return dict(
+        times=rnd(ts["times"], 3), Ts=rnd(ts["T_surf"], 2), Tc=rnd(ts["T_core"], 2),
+        DI=rnd(ts["DI"], 4), tc=float(ts["t_cool"]), tt=float(ts["t_total"]), mode=mode,
+        Tair=float(ts["reheat_T"]), Tfill=float(ts["T_fill"]),
+        late=float(ts.get("late_cool_T", T_ROOM)),
+        spans=[[round(a, 3), round(b, 3)] for a, b in _reheat_spans(ts)],
+        bursts=bursts if mode == "pulsed" else [],
+        seq=([float(ts["reheat_start"]), float(ts["reheat_end"])]
+             if mode == "sequential" and float(ts["t_reheat"]) > 0 else None),
+        zones=[{"T": float(z["T"]), "d": float(z["duration"])} for z in ts["zones"]])
+
+def _studio(ts, params, opts):
+    reh = params["reheat"]
     lab = {k[3:]: t(k) for k in TR["en"] if k.startswith("ls_")}
     lab.update(min=t("min"), zone=t("zone_n"), reheat=t("rb_reheat_seg"), final=t("rb_final"),
                play=t("play"), pause=t("pause"))
-    seq = ([float(ts["reheat_start"]), float(ts["reheat_end"])]
-           if mode == "sequential" and float(ts["t_reheat"]) > 0 else None)
+    alts = {}
+    if opts:
+        worst, best = _worst_best(opts)
+        for k, o in (("worst", worst), ("best", best)):
+            alts[k] = dict(_view(o["ts"]), name=o["name"], peak=o["peak"])
     _line_studio(
-        times=rnd(ts["times"], 3), Ts=rnd(ts["T_surf"], 2), Tc=rnd(ts["T_core"], 2),
-        DI=rnd(ts["DI"], 4), tc=float(ts["t_cool"]), tt=float(ts["t_total"]), mode=mode,
-        Tair=float(reh["T"]), Tfill=float(ts["T_fill"]),
-        late=float(ts.get("late_cool_T", T_ROOM)),
-        spans=[[round(a, 3), round(b, 3)] for a, b in _reheat_spans(ts)],
-        bursts=([[float(s), int(d)] for s, d in reh.get("bursts", [])] if mode == "pulsed" else []),
-        seq=seq, zones=[{"T": float(z["T"]), "d": float(z["duration"])} for z in ts["zones"]],
+        **_view(ts, [[float(s), int(d)] for s, d in reh.get("bursts", [])]),
         geo={"L": L_COOL, "r": (LANE_TOP - LANE_BOT) / 2, "bw": BELT_W, "R": R_S, "H": H_S},
         heat=[[T, c] for T, c in HEAT_STOPS],
         risk=[[0.80, RISK_COL["CRITICAL"], t("risk_critical")],
               [0.50, RISK_COL["WARNING"], t("risk_warning")],
               [0.25, RISK_COL["CAUTION"], t("risk_caution")],
               [0.0, RISK_COL["SAFE"], t("risk_safe")]],
-        lab=lab, editable=(mode == "pulsed"),
+        lab=lab, editable=(ts.get("reheat_mode") == "pulsed"), alts=alts,
         key="studio", default=None, on_change=_on_studio)
+
+# ── Cases tab: every preset, worst case to best option, and the optimiser ──
+def _apply_recipe(c, T_fill, melt, late):
+    """Put an optimiser result into the sidebar (its reheat timing comes too)."""
+    ss = st.session_state
+    ss.zones = [dict(z) for z in c["zones"]]
+    ss.reheat = {k: ([list(b) for b in v] if k == "bursts" else v) for k, v in c["reh"].items()}
+    ss.h_cool = c["h_cool"]; ss.h_reheat = c["h_reh"]
+    ss.T_fill = T_fill; ss.melt = melt; ss.late_cool_T = late
+    ss.zone_version = ss.get("zone_version", 0) + 1
+    ss.burst_version = ss.get("burst_version", 0) + 1
+
+def _pick_case(name, r=None):
+    """Button callback: load a preset, and its optimised recipe when given."""
+    _load_scenario(name)
+    st.session_state.sc_cur = name
+    st.session_state["sc_pick_" + st.session_state.get("lang", "en")] = name
+    if r:
+        sc = SCENARIOS[name]
+        _apply_recipe(r, sc.get("T_fill", 80.0), sc.get("melt", 67.0), sc.get("late_cool_T", 23.0))
+
+@st.cache_data(show_spinner=False)
+def _case_opt(name, scope):
+    """Optimiser result for one preset (cached: presets never change)."""
+    sc = SCENARIOS[name]
+    best = optimise(sc.get("T_fill", 80.0), sc["reheat"], sc["h_cool"], sc.get("h_reheat", 12.0),
+                    sc.get("melt", 67.0), sc.get("late_cool_T", 23.0), scope)
+    return min(best.values(), key=lambda b: b["score"]) if best else None
+
+def _case_card(o, r, scope):
+    di = o["peak"]; col = _rcol(di); cyc = t("cs_cycle").format(t=o["cycle"])
+    opt = ""
+    if r:
+        note = (f"<p class='cs-note'>{t('cs_need_reheat')}</p>"
+                if scope == "cooling" and r["di"] >= 0.25 else "")
+        opt = (f"<div class='cs-opt'><span>{t('cs_optimised')}</span>"
+               f"<b style='color:{col}'>{di:.3f}</b><i>→</i><b style='color:{_rcol(r['di'])}'>"
+               f"{r['di']:.3f}</b><em>{t('cs_cycle').format(t=r['t'])}, {t(_MODE_KEY[r['mode']])}</em>"
+               f"</div>{note}")
+    return (f"<div class='case'>{_crack_glyph(di, o['seed'])}<div class='cs-main'><b>{o['name']}</b>"
+            f"<span><strong style='color:{col}'>{di:.3f}</strong>{cyc}</span></div>"
+            f"<p class='cs-why'>{_why(o)}</p>{opt}</div>")
+
+def _cases_tab(ats):
+    opts = _categorise(_options(drl=False))
+    scope = st.session_state.get("opt_scope_v", "all")
+    res = st.session_state.setdefault("case_opt", {})
+    worst, best = _worst_best(opts)
+    mine = float(max(ats["DI"])) if ats else 0.0
+    mine_ok = bool(ats) and mine < 0.25 and float(ats["t_total"]) <= 30.5
+    st.markdown(_tab_head(t("th_cases"), t("sf_cases"), [
+        (f"{worst['peak']:.3f}", t("cat_worst"), _rcol(worst["peak"])),
+        (f"{best['peak']:.3f}", t("cat_best"), _rcol(best["peak"])),
+        (f"{mine:.3f}", t("f_yours").format(cat=t("cat_good" if mine_ok else "cat_work")),
+         _rcol(mine))]), unsafe_allow_html=True)
+    cA, cB = st.columns([3, 1], vertical_alignment="center")
+    cA.markdown(f"<p class='cs-scope'>{t('cs_scope').format(s=t('opt_scope_' + scope))}</p>",
+                unsafe_allow_html=True)
+    if cB.button(t("cs_opt_all"), key="cs_all", width='stretch'):
+        with st.spinner(t("drl_spin")):
+            for o in opts:
+                res[(o["id"], scope)] = _case_opt(o["id"], scope)
+        st.rerun()
+    idx = {k: i for i, k in enumerate(SCENARIOS)}
+    for col, cat in zip(st.columns(4, gap="medium"), ("worst", "work", "good", "best")):
+        items = sorted((o for o in opts if o["cat"] == cat), key=lambda o: -o["peak"])
+        col.markdown(f"<div class='cs-cat {cat}'><b>{t('cat_' + cat)}</b>"
+                     f"<span>{t('cat_' + cat + '_d')}</span></div>", unsafe_allow_html=True)
+        if not items:
+            col.markdown(f"<p class='cs-none'>{t('cs_none')}</p>", unsafe_allow_html=True)
+        for o in items:
+            i = idx[o["id"]]; r = res.get((o["id"], scope))
+            col.markdown(_case_card(o, r, scope), unsafe_allow_html=True)
+            b1, b2 = col.columns(2)
+            b1.button(t("cs_load"), key=f"cl_{i}", width='stretch',
+                      on_click=_pick_case, args=(o["id"],))
+            if r is None:
+                if b2.button(t("cs_opt"), key=f"co_{i}", width='stretch'):
+                    with st.spinner(t("drl_spin")):
+                        res[(o["id"], scope)] = _case_opt(o["id"], scope)
+                    st.rerun()
+            else:
+                b2.button(t("cs_load_opt"), key=f"ca_{i}", width='stretch', type="primary",
+                          on_click=_pick_case, args=(o["id"], r))
 
 def main():
     # ─── Cloud secrets → env (deployment) ──────────────────────────────────
@@ -2056,6 +2312,37 @@ hr{border-color:var(--rule)!important}
 .rp-dl dd{margin:0;color:var(--frost)}
 .rp-muted{color:var(--frost3)!important}
 
+/* Cases: worst case to best option, with the reason and the optimiser's result */
+[class*='st-key-sc_pick'] [role="radiogroup"]>* [data-testid="stMarkdownContainer"] p::before{
+  display:block;font-size:.66rem;font-weight:650;margin-bottom:.12rem}
+.rk-g{width:2.3rem;height:2.3rem;display:block}
+.cs-scope{color:var(--frost3)!important;font-size:.84rem!important;margin:0!important}
+.cs-cat{padding:.4rem 0 .65rem;border-bottom:2px solid currentColor;margin:1rem 0 .8rem}
+.cs-cat b{display:block;font-stretch:115%;font-weight:600;font-size:1.04rem}
+.cs-cat span{display:block;color:var(--frost3);font-size:.76rem;margin-top:.15rem}
+.cs-cat.worst{color:var(--critical)}.cs-cat.work{color:var(--caution)}
+.cs-cat.good,.cs-cat.best{color:var(--safe)}
+.case{display:grid;grid-template-columns:2.3rem minmax(0,1fr);gap:.2rem .8rem;align-items:center;
+  padding:.85rem .9rem .8rem;border:1px solid var(--rule);border-radius:12px;background:rgba(31,42,60,.32)}
+.cs-main b{display:block;color:var(--frost);font-weight:600;font-size:.9rem;line-height:1.3}
+.cs-main span{color:var(--frost3);font-size:.78rem}
+.cs-main strong{font-weight:650;font-variant-numeric:tabular-nums;margin-right:.45rem}
+.cs-why{grid-column:1/-1;color:var(--frost2)!important;font-size:.8rem!important;line-height:1.5!important;
+  margin:.5rem 0 0!important}
+.cs-opt{grid-column:1/-1;display:flex;align-items:baseline;gap:.4rem;flex-wrap:wrap;margin-top:.55rem;
+  padding-top:.55rem;border-top:1px solid var(--rule);font-size:.8rem;color:var(--frost3);
+  font-variant-numeric:tabular-nums}
+.cs-opt b{font-weight:650}
+.cs-opt i{font-style:normal}
+.cs-opt em{font-style:normal;flex-basis:100%;font-size:.76rem}
+.cs-note{grid-column:1/-1;color:var(--caution)!important;font-size:.76rem!important;line-height:1.45!important;
+  margin:.35rem 0 0!important}
+.cs-none{color:var(--frost3)!important;font-size:.82rem!important}
+[class*='st-key-cl_'] button,[class*='st-key-co_'] button,[class*='st-key-ca_'] button{
+  min-height:1.95rem!important;padding:.2rem .6rem!important}
+[class*='st-key-cl_'] button p,[class*='st-key-co_'] button p,[class*='st-key-ca_'] button p{
+  font-size:.78rem!important}
+
 /* Advisor */
 .status{display:inline-flex;align-items:center;gap:.5rem;color:var(--frost2);font-size:.84rem;
   margin-bottom:.4rem}
@@ -2160,12 +2447,14 @@ hr{border-color:var(--rule)!important}
     # so the hero always shows the current recipe; no separate Compute step.
     if ats:
         st.markdown(_hero_html(DI_live, ats, params, heal_live), unsafe_allow_html=True)
-        _studio(ats, params)
+        _studio(ats, params, _options())
 
     # ─── TABS ─────────────────────────────────────────────────────────────────
-    tab2,tab3,tab4,tab5 = st.tabs([
-        t("tab_temp"), t("tab_crack"), t("tab_results"), t("tab_advisor"),
+    tab1,tab2,tab3,tab4,tab5 = st.tabs([
+        t("tab_cases"), t("tab_temp"), t("tab_crack"), t("tab_results"), t("tab_advisor"),
     ])
+    with tab1:
+        _cases_tab(ats)
     _cfg3d = {"displayModeBar":True,"displaylogo":False,"scrollZoom":True,
               "modeBarButtonsToRemove":["pan3d","tableRotation"]}
 

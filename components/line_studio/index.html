@@ -59,6 +59,8 @@ canvas.hand{cursor:pointer}
 .p-s{display:flex;align-items:center;gap:8px;margin-top:11px;padding-top:9px;
   border-top:1px solid var(--rule);font-size:12px;color:var(--frost2)}
 .p-s::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--frost3);flex-shrink:0}
+.p-s.crack{color:#F1D7A0}
+.p-s.crack::before{background:#E9C46A}
 .p-s.hot{color:#F2C7A3}
 .p-s.hot::before{background:var(--hot);box-shadow:0 0 9px var(--hot);animation:beat 1s ease-in-out infinite}
 
@@ -74,6 +76,20 @@ canvas.hand{cursor:pointer}
 .scale{display:flex;align-items:center;gap:7px;color:var(--frost3);font-size:11px;
   font-variant-numeric:tabular-nums}
 .scale i{width:96px;height:5px;border-radius:3px}
+/* Compare: run the line as your recipe, the worst case or the best option */
+.cmp{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:3;display:flex;
+  flex-direction:column;align-items:center;gap:6px;max-width:48%}
+.cmp[hidden]{display:none}
+.cmp .seg button{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.cmp .seg button i{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.cmp .seg button b{font-weight:600;font-variant-numeric:tabular-nums}
+.cmp p{margin:0;font-size:11.5px;color:var(--frost2);text-align:center;
+  text-shadow:0 1px 2px rgba(8,12,18,.95)}
+@media (max-width:1100px){
+  .cmp{top:60px;left:auto;right:16px;transform:none;align-items:flex-end;max-width:62%}
+  .cmp p{text-align:right}
+  .scale{display:none}
+}
 
 /* Dock: play, the thermal track (which is also the timeline), add burst */
 .dock{position:absolute;left:0;right:0;bottom:0;z-index:3;display:grid;
@@ -83,7 +99,11 @@ canvas.hand{cursor:pointer}
   background:rgba(232,237,244,.06);display:grid;place-items:center;cursor:pointer;transition:background .16s}
 .play:hover{background:rgba(232,237,244,.14)}
 .play svg{width:14px;height:14px;fill:var(--frost)}
-.track{position:relative;height:70px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer}
+.track{position:relative;height:92px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer}
+/* Damage lane: damage index over the cycle; dashed line = 0.25, where cracks start */
+.tk-d{position:absolute;left:0;right:0;top:20px;height:18px}
+.tk-d svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.tk-d span{position:absolute;left:0;top:-2px;font-size:9.5px;color:var(--frost3);pointer-events:none}
 .tk-b{position:absolute;left:0;right:0;top:0;height:16px}
 .bk{position:absolute;top:4px;height:8px;border-radius:3px;background:var(--hot);
   box-shadow:0 0 10px rgba(221,106,58,.55)}
@@ -95,17 +115,17 @@ canvas.hand{cursor:pointer}
   border-radius:2px;opacity:0;transition:opacity .15s}
 .bk .rz::after{content:"";position:absolute;left:3px;top:3px;bottom:3px;width:2px;border-radius:1px;background:var(--frost)}
 .bk.ed:hover .rz,.bk.sel .rz{opacity:1}
-.tk-band{position:absolute;left:0;right:0;top:21px;height:22px;border-radius:6px;
+.tk-band{position:absolute;left:0;right:0;top:42px;height:22px;border-radius:6px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -9px 16px rgba(0,0,0,.18);
   animation:pour 1.1s cubic-bezier(.2,.7,.1,1) both}
-.tk-z{position:absolute;left:0;right:0;top:47px;height:23px}
+.tk-z{position:absolute;left:0;right:0;top:69px;height:23px}
 .tk-z div{position:absolute;top:0;height:100%;padding-left:6px;border-left:1px solid var(--rule2);
   overflow:hidden;white-space:nowrap;font-size:10.5px;line-height:11.5px;color:var(--frost3)}
 .tk-z b{display:block;color:var(--frost2);font-weight:550;font-size:11px;font-variant-numeric:tabular-nums}
-.tk-h{position:absolute;top:-4px;height:51px;width:0;outline:none;pointer-events:none}
+.tk-h{position:absolute;top:-4px;height:73px;width:0;outline:none;pointer-events:none}
 .tk-h::before{content:"";position:absolute;left:-1px;top:0;bottom:0;width:2px;border-radius:1px;
   background:var(--frost)}
-.tk-h i{position:absolute;left:-8px;top:26px;width:16px;height:16px;border-radius:50%;
+.tk-h i{position:absolute;left:-8px;top:49px;width:16px;height:16px;border-radius:50%;
   background:var(--frost);box-shadow:0 0 0 4px rgba(232,237,244,.16),0 2px 10px rgba(0,0,0,.4)}
 .tk-h:focus-visible i{box-shadow:0 0 0 5px rgba(232,237,244,.45)}
 .dock-r{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
@@ -140,6 +160,9 @@ canvas.hand{cursor:pointer}
   .dock{grid-template-columns:auto minmax(0,1fr);gap:12px;padding:34px 12px 10px}
   .dock-r{grid-column:1/-1;flex-direction:row;justify-content:space-between;align-items:center}
   .lbl span,.lbl b{font-size:10px}
+  .cmp{top:48px;right:10px}
+  .cmp p{display:none}
+  .cmp .seg button{padding:5px 8px}
   .tk-z div{font-size:9.5px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -164,10 +187,12 @@ canvas.hand{cursor:pointer}
     <div class="seg" role="group" id="views"></div>
     <div class="scale"><span>15 °C</span><i id="scale"></i><span>100 °C</span></div>
   </div>
+  <div class="cmp" id="cmp" hidden><div class="seg" role="group" id="cmpb"></div><p id="cmpc"></p></div>
   <div class="dock">
     <button class="play" id="play" type="button"></button>
     <div class="track" id="track">
       <div class="tk-b" id="tb"></div>
+      <div class="tk-d" id="dl"></div>
       <div class="tk-band" id="band"></div>
       <div class="tk-z" id="tz"></div>
       <div class="tk-h" id="head" role="slider" tabindex="0" aria-valuemin="0"><i></i></div>
@@ -319,10 +344,12 @@ function updateProbe() {
   $("ps").textContent = Ts.toFixed(0) + " °C"; $("isw").style.background = heatHex(Ts);
   $("pc").textContent = Tc.toFixed(0) + " °C"; $("icw").style.background = heatHex(Tc);
   $("pd").textContent = di.toFixed(3); $("pd").style.color = rk.col; $("pr").textContent = rk.name;
-  const hot = hotAt(t), seg = segments().find(s => t >= s.a && t <= s.b) || {};
+  const hot = hotAt(t), cracked = di >= .25, seg = segments().find(s => t >= s.a && t <= s.b) || {};
   const pst = $("pst");
-  pst.textContent = hot ? (D.mode === "sequential" ? L.tunnel_on : L.hot_on) : (seg.name || "");
+  pst.textContent = hot ? (cracked ? L.healing : (D.mode === "sequential" ? L.tunnel_on : L.hot_on))
+                        : (cracked ? L.cracks : (seg.name || ""));
   pst.classList.toggle("hot", hot);
+  pst.classList.toggle("crack", cracked && !hot);
   head.style.left = pct(t);
   head.setAttribute("aria-valuemax", D.tt.toFixed(1));
   head.setAttribute("aria-valuenow", t.toFixed(1));
@@ -336,6 +363,20 @@ function drawTrack() {
     stops.push(`${heatHex(sample(D.Ts, tm))} ${(100 * i / n).toFixed(2)}%`);
   }
   $("band").style.background = `linear-gradient(90deg,${stops.join(",")})`;
+  // Damage lane: area of the damage index, coloured by risk; dashed line = 0.25.
+  const m = 160, mx = Math.max(.6, Math.max(...D.DI) * 1.08), gs = [];
+  let p = "M0 100";
+  for (let i = 0; i <= m; i++) {
+    const v = sample(D.DI, D.tt * i / m);
+    p += ` L${(1000 * i / m).toFixed(1)} ${(100 - 100 * v / mx).toFixed(1)}`;
+    gs.push(`<stop offset="${(i / m).toFixed(4)}" stop-color="${riskOf(v).col}"/>`);
+  }
+  const th = (100 - 100 * .25 / mx).toFixed(1);
+  $("dl").innerHTML = `<svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">` +
+    `<defs><linearGradient id="dg" x1="0" x2="1" y1="0" y2="0">${gs.join("")}</linearGradient></defs>` +
+    `<path d="${p} L1000 100 Z" fill="url(#dg)" fill-opacity=".85"/>` +
+    `<path d="M0 ${th} H1000" stroke="rgba(232,237,244,.6)" stroke-width="1" stroke-dasharray="5 5" ` +
+    `vector-effect="non-scaling-stroke"/></svg><span>${L.damage_lane}</span>`;
   $("tz").innerHTML = segments().map(s =>
     `<div style="left:${pct(s.a)};width:${pct(s.b - s.a)}"><span>${s.name}</span><b>${s.T.toFixed(0)} °C</b></div>`
   ).join("");
@@ -348,11 +389,11 @@ function drawTrack() {
 function drawBursts() {
   tb.innerHTML = "";
   for (const h of hotSpans()) {
-    const el = document.createElement("div");
-    el.className = "bk" + (h.i >= 0 ? " ed" : "") + (h.i >= 0 && h.i === sel ? " sel" : "");
+    const ed = D.editable && h.i >= 0, el = document.createElement("div");
+    el.className = "bk" + (ed ? " ed" : "") + (ed && h.i === sel ? " sel" : "");
     el.style.left = pct(h.a);
     el.style.width = `max(${pct(h.b - h.a)}, 10px)`;
-    if (h.i >= 0) {
+    if (ed) {
       const b = bursts[h.i];
       el.dataset.i = h.i; el.tabIndex = 0; el.setAttribute("role", "button");
       el.setAttribute("aria-label", fmt(L.burst_aria, { n: h.i + 1, s: b.s.toFixed(2), d: b.d }));
@@ -484,20 +525,42 @@ function fitHeight() {
 window.addEventListener("resize", fitHeight);
 
 // ── Render message from Python ───────────────────────────────────────────────
+// BASE = your recipe; alts = the worst case and best option, shown on demand.
+let BASE = null, alt = "mine";
 function onRender(args) {
   if (drag) { pending = args; return; }
-  const first = !D;
-  D = args; L = D.lab || {};
+  const first = !BASE;
+  BASE = args;
+  if (alt !== "mine" && !(BASE.alts && BASE.alts[alt])) alt = "mine";
+  stage.classList.remove("busy");
+  applyData();
+  if (first) loadThree();
+}
+function applyData() {
+  D = alt === "mine" ? BASE : { ...BASE, ...BASE.alts[alt], editable: false };
+  L = D.lab || {};
   STOPS = D.heat.map(([T, h]) => [T, hex2rgb(h)]);
   bursts = (D.bursts || []).map(([s, d]) => ({ s: +s, d: +d }));
-  if (sel >= bursts.length) sel = -1;
-  stage.classList.remove("busy");
+  if (sel >= bursts.length || alt !== "mine") sel = -1;
   probe = Math.min(probe, D.tt); flow = flow % D.tt;
-  buildPath(); staticText(); drawTrack(); updateProbe(); fitHeight();
-  if (first) loadThree();
+  buildPath(); staticText(); drawTrack(); drawCompare(); updateProbe(); fitHeight();
   if (W) rebuildWorld();
   dirty = true;
 }
+function setAlt(a) { if (a !== alt) { alt = a; applyData(); } }
+function drawCompare() {
+  const A = BASE.alts || {}, box = $("cmp");
+  box.hidden = !(A.worst || A.best);
+  if (box.hidden) return;
+  const opt = (k, label, peak) => `<button type="button" data-a="${k}" aria-pressed="${alt === k}">` +
+    `<i style="background:${riskOf(peak).col}"></i>${label}<b>${peak.toFixed(2)}</b></button>`;
+  $("cmpb").setAttribute("aria-label", L.cmp);
+  $("cmpb").innerHTML = opt("mine", L.cmp_mine, Math.max(...BASE.DI)) +
+    (A.worst ? opt("worst", L.cmp_worst, A.worst.peak) : "") + (A.best ? opt("best", L.cmp_best, A.best.peak) : "");
+  const cur = alt === "mine" ? null : A[alt];
+  $("cmpc").textContent = cur ? fmt(L.cmp_cap, { name: cur.name, t: cur.tt.toFixed(0) }) : "";
+}
+$("cmp").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setAlt(b.dataset.a); });
 
 // ── 3D world (three.js from the CDN; the track and read-out work without it) ─
 function loadThree() {
@@ -591,10 +654,11 @@ const SAFE = { top: .24, bot: .24 };
 function measureSafe() {
   // Top margin from the camera pill, not the read-out: the read-out lets
   // pointers through and only covers the corner, which is empty floor.
-  const s = stage.getBoundingClientRect(), p = document.querySelector(".views").getBoundingClientRect(),
-        k = track.getBoundingClientRect();
+  const s = stage.getBoundingClientRect(), k = track.getBoundingClientRect();
+  const top = Math.max(...[".views", ".cmp"].map(q => document.querySelector(q))
+    .filter(e => e && !e.hidden).map(e => e.getBoundingClientRect().bottom));
   if (!s.height) return;
-  SAFE.top = clamp((p.bottom - s.top + 6) / s.height, .06, .45);
+  SAFE.top = clamp((top - s.top + 6) / s.height, .06, .45);
   SAFE.bot = clamp((s.bottom - k.top + 14) / s.height, .08, .45);
 }
 
@@ -657,12 +721,92 @@ function buildSticks() {
   const mat = stickMat();
   for (let i = 0; i < 40; i++) {
     const m = new THREE.Mesh(stickGeo(), mat); m.castShadow = true; m.visible = false;
+    addCrack(m, 101 + i * 37);
     W.scene.add(m); W.sticks.push(m);
   }
+}
+
+// Cracks, peridynamic style: arms grow from the sink point, branch, reach the
+// rim and run down the wall. Segments are ordered by growth, so drawing a
+// prefix grows the crack; it appears at damage 0.25 and is complete by 0.6,
+// and it retracts again when hot air heals the surface.
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => { s += 0x6D2B79F5; let t = s; t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function crackSegments(seed) {
+  const { R, H } = D.geo, r = rng(seed), segs = [], top = H + .012, wall = R * 1.008;
+  const ox = (r() - .5) * R * .4, oz = (r() - .5) * R * .4;
+  const grow = (x, z, ang, w, depth, o) => {
+    for (let s = 0; s < 8; s++) {
+      ang += (r() - .5) * .8;
+      const len = R * (.1 + r() * .08);
+      let nx = x + Math.cos(ang) * len, nz = z + Math.sin(ang) * len;
+      if (Math.hypot(nx, nz) >= R * .97) {               // rim: carry on down the wall
+        let th = Math.atan2(nz, nx); nx = Math.cos(th) * R * .97; nz = Math.sin(th) * R * .97;
+        segs.push({ o: o + s, w, a: [x, top, z], b: [nx, top, nz] });
+        let y = H, ww = w * .9;
+        for (let d = 0; d < 4; d++) {
+          const y2 = y - H * (.06 + r() * .06), th2 = th + (r() - .5) * .2;
+          segs.push({ o: o + s + d + 1, w: ww, side: true,
+            a: [Math.cos(th) * wall, y, Math.sin(th) * wall], b: [Math.cos(th2) * wall, y2, Math.sin(th2) * wall] });
+          y = y2; th = th2; ww *= .85;
+        }
+        return;
+      }
+      segs.push({ o: o + s, w, a: [x, top, z], b: [nx, top, nz] });
+      if (depth < 2 && s > 0 && r() < .3) grow(nx, nz, ang + (r() < .5 ? 1 : -1) * (.5 + r() * .5), w * .7, depth + 1, o + s + 1);
+      x = nx; z = nz; w *= .93;
+    }
+  };
+  const arms = 3 + Math.floor(r() * 3);
+  for (let k = 0; k < arms; k++) grow(ox, oz, k / arms * Math.PI * 2 + (r() - .5) * .8, R * .1, 0, 0);
+  return { segs: segs.sort((p, q) => p.o - q.o), ox, oz };
+}
+function ribbonGeo(segs, scale) {
+  const pos = new Float32Array(segs.length * 12), idx = [];
+  segs.forEach((g, i) => {
+    const [ax, ay, az] = g.a, [bx, by, bz] = g.b, h = g.w * scale / 2;
+    let ux, uz;
+    if (g.side) { const th = Math.atan2(az + bz, ax + bx); ux = -Math.sin(th); uz = Math.cos(th); }
+    else { const dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1; ux = -dz / l; uz = dx / l; }
+    pos.set([ax - ux * h, ay, az - uz * h, ax + ux * h, ay, az + uz * h,
+             bx + ux * h, by, bz + uz * h, bx - ux * h, by, bz - uz * h], i * 12);
+    const v = i * 4; idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3)); geo.setIndex(idx); geo.setDrawRange(0, 0);
+  return geo;
+}
+let CRACK_EDGE = null;
+function addCrack(m, seed) {
+  const { segs, ox, oz } = crackSegments(seed), { R, H } = D.geo;
+  CRACK_EDGE = CRACK_EDGE || new THREE.MeshBasicMaterial({ color: 0x0d0907, transparent: true, opacity: .8,
+    side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+  const edge = new THREE.Mesh(ribbonGeo(segs, 2.1), CRACK_EDGE);
+  const core = new THREE.Mesh(ribbonGeo(segs, 1), new THREE.MeshBasicMaterial({ color: 0xe9c46a,
+    side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }));
+  edge.renderOrder = 2; core.renderOrder = 3;
+  // The sink mark itself: a shallow dark dent where the arms start.
+  const dent = new THREE.Mesh(new THREE.CircleGeometry(R * .5, 40), new THREE.MeshBasicMaterial({ color: 0x000000,
+    transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  dent.rotation.x = -Math.PI / 2; dent.position.set(ox, H + .006, oz);
+  m.add(dent, edge, core);
+  m.userData.crack = { edge, core, dent, n: segs.length };
+}
+function paintCrack(m, di) {
+  const c = m.userData.crack, f = di >= .25 ? .18 + .82 * clamp((di - .25) / .35, 0, 1) : 0;
+  const k = 6 * Math.round(c.n * f);
+  c.edge.geometry.setDrawRange(0, k); c.core.geometry.setDrawRange(0, k);
+  c.edge.visible = c.core.visible = c.dent.visible = f > 0;
+  if (f > 0) { c.core.material.color.set(riskOf(di).col); c.dent.material.opacity = .32 * f; c.dent.scale.setScalar(.45 + .55 * f); }
+  return f;
 }
 function buildHero() {
   const { R, H } = D.geo;
   const body = new THREE.Mesh(stickGeo(), stickMat()); body.castShadow = true;
+  addCrack(body, 7919);
   const halo = new THREE.Mesh(new THREE.RingGeometry(R * 1.45, R * 1.85, 64),
     new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .95, depthWrite: false }));
   halo.rotation.x = -Math.PI / 2; halo.position.y = .03;
@@ -836,12 +980,14 @@ function placeSticks() {
     if (!m.visible) return;
     const [x, z] = posAt(t); m.position.set(x, 0, z);
     paintStick(m, sample(D.Ts, t), sample(D.Tc, t));
+    paintCrack(m, sample(D.DI, t));
   });
 }
 function placeHero() {
   const [x, z] = posAt(probe), di = sample(D.DI, probe), rk = riskOf(di);
   W.hero.g.position.set(x, 0, z);
   paintStick(W.hero.body, sample(D.Ts, probe), sample(D.Tc, probe));
+  W.heroCrack = paintCrack(W.hero.body, di);
   W.hero.halo.material.color.set(rk.col); W.hero.glow.material.color.set(rk.col);
   W.heroLbl.at.set(x, D.geo.H + 4.5, z);
   W.heroLbl.el.textContent = `${probe.toFixed(1)} ${L.min}`;
@@ -1016,7 +1162,9 @@ function loop(now) {
   dirty = false;
 }
 // Exposed for automated checks (Playwright): read-only snapshot of the state.
-window.__studio = () => ({ ready: !!W, probe, playing, bursts: bursts.map(b => [b.s, b.d]), sel, view, mode: D && D.mode });
+window.__studio = () => ({ ready: !!W, probe, playing, bursts: bursts.map(b => [b.s, b.d]), sel, view,
+  mode: D && D.mode, alt, heroCrack: W ? W.heroCrack || 0 : 0,
+  peakT: D ? D.times[D.DI.indexOf(Math.max(...D.DI))] : 0 });
 window.__studioXY = (what, i) => {     // screen point of the hero stick or nozzle i
   const o = what === "hero" ? W.hero.g : W.nozzles.find(n => n.userData.burst === i);
   const v = o.position.clone().setY(what === "hero" ? D.geo.H * .6 : D.geo.H + 2.05).project(W.camera);
