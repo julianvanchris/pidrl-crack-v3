@@ -2018,6 +2018,7 @@ hr{border-color:var(--rule)!important}
 [class*='st-key-sc_pick'] label[data-baseweb="radio"]>div:first-of-type,
 [class*='st-key-sc_pick'] [data-testid="stRadioOption"]>div>div:first-child:not([data-testid]){display:none}
 [class*='st-key-sc_pick'] [data-testid="stRadioOption"]{width:100%;cursor:pointer}
+[class*='st-key-sc_pick'] [data-testid="stRadioCaption"]{padding-left:0!important;margin-left:0!important}
 [class*='st-key-sc_pick'] [role="radiogroup"]>* p{font-size:.86rem!important;font-weight:550;
   color:var(--frost2)!important;line-height:1.35}
 [class*='st-key-sc_pick'] [role="radiogroup"]>*:has(input:checked) p{color:var(--frost)!important}
