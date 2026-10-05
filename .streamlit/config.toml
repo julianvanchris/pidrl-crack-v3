@@ -1,10 +1,10 @@
 # Streamlit theme + server config (used locally and on Streamlit Community Cloud)
 [theme]
 base = "dark"
-primaryColor = "#5b8cff"
-backgroundColor = "#060c1a"
-secondaryBackgroundColor = "#0e1c34"
-textColor = "#eaf1ff"
+primaryColor = "#E8EDF4"
+backgroundColor = "#111926"
+secondaryBackgroundColor = "#1F2A3C"
+textColor = "#E8EDF4"
 font = "sans serif"
 
 [server]
