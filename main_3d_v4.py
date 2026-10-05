@@ -1774,7 +1774,9 @@ def _scenario_css(names):
     rules = []
     for k, n in enumerate(names, 1):
         stops, di = _scenario_preview(n)
-        sel = f"[class*='st-key-sc_pick'] label[data-baseweb='radio']:nth-of-type({k})"
+        # Direct children of the group are the cards in both radio builds
+        # (Baseweb label up to ~1.58, React Aria wrapper div in 1.65+).
+        sel = f"[class*='st-key-sc_pick'] [role='radiogroup']>*:nth-child({k})"
         rules.append(f"{sel}{{--strip:linear-gradient(90deg,{stops})}}"
                      f"{sel}::after{{content:'{di:.2f}';color:{_rcol(di)}}}")
     return "<style>" + "".join(rules) + "</style>"
@@ -1999,22 +2001,24 @@ hr{border-color:var(--rule)!important}
 
 /* Scenario cards: the native radio, restyled; strip + peak damage per card */
 [class*='st-key-sc_pick'] [role="radiogroup"]{gap:.45rem!important;flex-direction:column}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"]{position:relative;display:flex!important;width:100%;
+[class*='st-key-sc_pick'] [role="radiogroup"]>*{position:relative;display:flex!important;width:100%;
   margin:0!important;padding:.68rem 3.1rem 1.15rem .9rem!important;border:1px solid var(--rule);
   border-radius:12px;background:rgba(31,42,60,.32);cursor:pointer;
   transition:border-color .16s ease,background .16s ease}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"]:hover{border-color:var(--rule2);background:rgba(31,42,60,.62)}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"]:has(input:checked){border-color:rgba(232,237,244,.5);
+[class*='st-key-sc_pick'] [role="radiogroup"]>*:hover{border-color:var(--rule2);background:rgba(31,42,60,.62)}
+[class*='st-key-sc_pick'] [role="radiogroup"]>*:has(input:checked){border-color:rgba(232,237,244,.5);
   background:var(--deck2)}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"]::before{content:"";position:absolute;left:.9rem;right:.9rem;
+[class*='st-key-sc_pick'] [role="radiogroup"]>*::before{content:"";position:absolute;left:.9rem;right:.9rem;
   bottom:.55rem;height:3px;border-radius:2px;background:var(--strip);opacity:.9}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"]::after{position:absolute;top:.7rem;right:.85rem;
+[class*='st-key-sc_pick'] [role="radiogroup"]>*::after{position:absolute;top:.7rem;right:.85rem;
   font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"]>div:first-of-type{display:none}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"] p{font-size:.86rem!important;font-weight:550;
+[class*='st-key-sc_pick'] label[data-baseweb="radio"]>div:first-of-type,
+[class*='st-key-sc_pick'] [data-testid="stRadioOption"]>div>div:first-child:not([data-testid]){display:none}
+[class*='st-key-sc_pick'] [data-testid="stRadioOption"]{width:100%;cursor:pointer}
+[class*='st-key-sc_pick'] [role="radiogroup"]>* p{font-size:.86rem!important;font-weight:550;
   color:var(--frost2)!important;line-height:1.35}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"]:has(input:checked) p{color:var(--frost)!important}
-[class*='st-key-sc_pick'] label[data-baseweb="radio"]:not(:has(input:checked)) [data-testid="stCaptionContainer"]{display:none}
+[class*='st-key-sc_pick'] [role="radiogroup"]>*:has(input:checked) p{color:var(--frost)!important}
+[class*='st-key-sc_pick'] [role="radiogroup"]>*:not(:has(input:checked)) [data-testid="stCaptionContainer"]{display:none}
 [class*='st-key-sc_pick'] [data-testid="stCaptionContainer"] p{font-size:.76rem!important;font-weight:400;
   color:var(--frost3)!important;margin-top:.3rem}
 
