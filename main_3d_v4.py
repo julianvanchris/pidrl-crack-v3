@@ -1929,22 +1929,25 @@ html,body,.stApp{color:var(--frost);font-family:var(--font)!important;
 
 /* Tabs: a floating glass bar that stays in reach while a long view scrolls */
 .stTabs{margin-top:2.6rem}
-.stTabs div:has(> [data-baseweb="tab-list"]){position:sticky;top:3.9rem;z-index:30;
-  width:fit-content;max-width:100%}
-.stTabs [data-baseweb="tab-list"]{gap:.2rem!important;padding:.3rem!important;overflow-x:auto;
+/* Sticky needs a tall parent: Baseweb (<=1.58) wraps the list in a box of its
+   own height, so the wrapper sticks there; React Aria (1.65+) has no wrapper. */
+.stTabs div:has(> [data-baseweb="tab-list"]),.stTabs [role="tablist"]{position:sticky;top:3.9rem;
+  z-index:30;width:fit-content;max-width:100%}
+.stTabs [role="tab"]>div[data-rac]{display:none!important}
+.stTabs [role="tablist"]{gap:.2rem!important;padding:.3rem!important;overflow-x:auto;
   background:rgba(23,33,49,.74)!important;border:1px solid var(--rule)!important;border-radius:999px!important;
   -webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%)}
-.stTabs [data-baseweb="tab"]{height:auto!important;padding:.55rem 1.25rem!important;border-radius:999px!important;
+.stTabs [role="tab"]{height:auto!important;padding:.55rem 1.25rem!important;border-radius:999px!important;
   background:transparent!important;color:var(--frost3)!important;white-space:nowrap;
   transition:background .2s ease,color .2s ease}
-.stTabs [data-baseweb="tab"] p{font-size:.92rem!important;font-stretch:108%;font-weight:550!important;
+.stTabs [role="tab"] p{font-size:.92rem!important;font-stretch:108%;font-weight:550!important;
   color:inherit!important}
-.stTabs [data-baseweb="tab"]:hover{color:var(--frost)!important;background:rgba(232,237,244,.07)!important}
+.stTabs [role="tab"]:hover{color:var(--frost)!important;background:rgba(232,237,244,.07)!important}
 .stTabs [aria-selected="true"],.stTabs [aria-selected="true"]:hover{background:var(--frost)!important;
   color:var(--night)!important}
 .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important}
-.stTabs [data-baseweb="tab-panel"]{padding-top:1.8rem!important}
-.stTabs [data-baseweb="tab-panel"]>div{animation:fadeIn .35s ease both}
+.stTabs [role="tabpanel"]{padding-top:1.8rem!important}
+.stTabs [role="tabpanel"]>div{animation:fadeIn .35s ease both}
 
 /* Tab head: editorial headline, standfirst, the view's key figures */
 .th{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2.6rem;align-items:end;
@@ -2096,12 +2099,12 @@ hr{border-color:var(--rule)!important}
   .mast{margin-bottom:1.6rem}
   .th{grid-template-columns:1fr;gap:1.1rem}
   .th-f{gap:1.4rem;flex-wrap:wrap}
-  .stTabs div:has(> [data-baseweb="tab-list"]){top:3.4rem}
-  .stTabs [data-baseweb="tab"]{padding:.5rem .9rem!important}
+  .stTabs div:has(> [data-baseweb="tab-list"]),.stTabs [role="tablist"]{top:3.4rem}
+  .stTabs [role="tab"]{padding:.5rem .9rem!important}
   .msg-u>div,.msg-a{max-width:100%}
 }
 @media (prefers-reduced-motion:reduce){
-  .verdict,.caret,.typing i,.stTabs [data-baseweb="tab-panel"]>div{animation:none!important}
+  .verdict,.caret,.typing i,.stTabs [role="tabpanel"]>div{animation:none!important}
 }
 </style>""", unsafe_allow_html=True)
 
