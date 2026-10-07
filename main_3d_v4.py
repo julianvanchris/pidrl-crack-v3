@@ -465,6 +465,7 @@ TR = {
     "belt_bursts": "{n} bursts of {s} s at {T:.0f} °C",
     "ls_cmp": "Compare", "ls_cmp_mine": "Your recipe", "ls_cmp_worst": "Worst case",
     "ls_cmp_best": "Best option", "ls_cmp_cap": "{name}, {t} min cycle",
+    "ls_load_alt": "Load this recipe",
     "ls_damage_lane": "Damage index",
     "ls_cracks": "Cracks on the top surface", "ls_healing": "Hot air is healing the cracks",
     "opt_drl": "Optimiser best, {mode}", "mode_none": "no reheat",
@@ -706,6 +707,7 @@ TR = {
     "belt_bursts": "{T:.0f} ℃のバースト{s}秒×{n}回",
     "ls_cmp": "比較", "ls_cmp_mine": "現在の条件", "ls_cmp_worst": "最悪のケース",
     "ls_cmp_best": "最良の選択肢", "ls_cmp_cap": "{name}、サイクル{t}分",
+    "ls_load_alt": "この条件を読込",
     "ls_damage_lane": "損傷指数",
     "ls_cracks": "上面に亀裂", "ls_healing": "熱風が亀裂を修復中",
     "opt_drl": "最適化の最良（{mode}）", "mode_none": "再加熱なし",
@@ -1461,7 +1463,7 @@ def sidebar():
         new_D=cB.number_input(t("zone_min"),0.5,35.0,float(z["duration"]),0.5,
                                key=f"zD_{ver}_{i}")
         z["T"]=float(new_T); z["duration"]=float(new_D)
-        if cC.button("✕",key=f"del_{ver}_{i}",help=t("remove_zone").format(n=i+1)) and len(zones)>1:
+        if cC.button("×",key=f"del_{ver}_{i}",help=t("remove_zone").format(n=i+1)) and len(zones)>1:
             del_idx=i
     if del_idx is not None:
         zones.pop(del_idx); st.rerun()
@@ -1519,7 +1521,7 @@ def sidebar():
                                    float(min(bs,t_cool)),0.1,format="%.2f",key=f"bs_{bv}_{i}")
                 nd=cB.number_input(t("burst_len"),5,60,int(bd),5,key=f"bd_{bv}_{i}")
                 new_b.append([round(float(ns),3),int(nd)])
-                if cC.button("✕",key=f"bx_{bv}_{i}",help=t("remove_burst").format(n=i+1)) and len(b)>1:
+                if cC.button("×",key=f"bx_{bv}_{i}",help=t("remove_burst").format(n=i+1)) and len(b)>1:
                     drop=i
             cD,cE=st.columns(2)
             add=cD.button(t("add_burst"),width='stretch',disabled=len(b)>=12)
@@ -1728,41 +1730,52 @@ def _hydrate_env_from_secrets():
 
 
 # ── Hero: outlook, thermal ribbon, read-outs ───────────────────────────────
-def _readouts_html(ts, params, heal):
-    DI=max(ts["DI"]); t_tot=float(ts["t_total"]); Bi=params["h_cool"]*R_M/K_TH
-    mode=ts.get("reheat_mode","sequential"); T_air=params["reheat"]["T"]
-    spans=_reheat_spans(ts)
-    if mode=="pulsed" and spans:
-        rv=t("reheat_val_pul").format(n=int(ts["n_pulse"]),s=int(ts["pulse_sec"]))
-        rn=t("reheat_note_pul").format(T=T_air)
+def _heal(ts):
+    """Damage healed by the hot air: the drop from its start to its end."""
+    if float(ts["t_reheat"]) <= 0:
+        return 0.0
+    ta = np.asarray(ts["times"]); di = np.asarray(ts["DI"])
+    i0 = int(np.argmin(np.abs(ta - ts["reheat_start"])))
+    i1 = int(np.argmin(np.abs(ta - ts["reheat_end"])))
+    return float(di[i0]) - float(di[min(i1, len(di) - 1)])
+
+def _readout_cells(ts, h_cool):
+    """The six instruments of one case: label, value (HTML), note, value colour,
+    note colour."""
+    DI = max(ts["DI"]); t_tot = float(ts["t_total"]); Bi = h_cool * R_M / K_TH
+    mode = ts.get("reheat_mode", "sequential"); T_air = float(ts["reheat_T"])
+    spans = _reheat_spans(ts); heal = _heal(ts)
+    if mode == "pulsed" and spans:
+        rv = t("reheat_val_pul").format(n=int(ts["n_pulse"]), s=int(ts["pulse_sec"]))
+        rn = t("reheat_note_pul").format(T=T_air)
     elif spans:
-        key="sim" if mode=="simultaneous" else "seq"
-        rv=t("reheat_val_"+key).format(T=T_air,d=float(ts["t_reheat"]))
-        rn=t("reheat_note_"+key)
+        key = "sim" if mode == "simultaneous" else "seq"
+        rv = t("reheat_val_" + key).format(T=T_air, d=float(ts["t_reheat"]))
+        rn = t("reheat_note_" + key)
     else:
-        rv=t("reheat_off"); rn=t("st_none")
-    caution=RISK_COL["CAUTION"]
-    cells=[  # label, value, note, value colour, note colour
+        rv = t("reheat_off"); rn = t("st_none")
+    caution = RISK_COL["CAUTION"]
+    return [
         (t("ro_di"), f"{DI:.3f}", t("st_limit"), _rcol(DI), None),
         (t("ro_cycle"), f"{t_tot:.0f}<small>{t('min')}</small>",
-         t("st_within") if t_tot<=30 else t("st_over").format(d=t_tot-30),
-         None, None if t_tot<=30 else caution),
+         t("st_within") if t_tot <= 30 else t("st_over").format(d=t_tot - 30),
+         None, None if t_tot <= 30 else caution),
         (t("ro_exit"), f"{float(ts['T_surf'][-1]):.0f}<small>°C</small>",
          t("st_exit").format(t=t_tot), None, None),
-        (t("ro_biot"), f"{Bi:.2f}", t("st_uniform") if Bi<=0.5 else t("st_uneven"),
-         None, None if Bi<=0.5 else caution),
+        (t("ro_biot"), f"{Bi:.2f}", t("st_uniform") if Bi <= 0.5 else t("st_uneven"),
+         None, None if Bi <= 0.5 else caution),
         (t("ro_heal"), f"{heal:+.3f}" if spans else "–",
-         t("st_effective") if heal>0.02 else (t("st_minimal") if spans else t("st_none")),
+         t("st_effective") if heal > 0.02 else (t("st_minimal") if spans else t("st_none")),
          None, None),
-        (t("ro_reheat"), rv, rn, None, None),
-    ]
-    out=[]
-    for lbl,val,note,vc,nc in cells:
-        vs=f" style='color:{vc}'" if vc else ""
-        ns=f" style='color:{nc}'" if nc else ""
-        out.append(f"<div class='ro'><div class='ro-l'>{lbl}</div><div class='ro-v'{vs}>{val}</div>"
-                   f"<div class='ro-n'{ns}>{note}</div></div>")
-    return "<div class='readouts'>"+"".join(out)+"</div>"
+        (t("ro_reheat"), rv, rn, None, None)]
+
+def _hero_data(ts, h_cool):
+    """Verdict and instruments of one case, shown at the top of the stage."""
+    DI = float(max(ts["DI"])); risk = _rlbl(DI).lower()
+    vkey = "safe_margin" if risk == "safe" and DI >= 0.15 else risk
+    return dict(k=t("outlook"), chip=_rname(DI), chip_col=_rcol(DI), verdict=t("v_" + vkey),
+                sub=t("v_detail").format(di=DI), hint=t("v_" + vkey + "_hint"),
+                cells=[list(c) for c in _readout_cells(ts, h_cool)])
 
 def _src_label(src):
     """Plain description of the engine that answered."""
@@ -1772,19 +1785,10 @@ def _src_label(src):
         return f"{eng.capitalize()}, {model}"
     return t("rule_based")
 
-def _hero_html(DI, ts, params, heal):
-    risk=_rlbl(DI).lower()
-    vkey="safe_margin" if risk=="safe" and DI>=0.15 else risk
+def _mast_html():
     return (f"<div class='mast'><div class='mast-brand'>{MARK_SVG}<span class='wm'>PI-DRL</span>"
             f"<span class='ds'>{t('brand_desc')}</span></div>"
-            f"<div class='mast-client'>CBIC × TUAT</div></div>"
-            f"<div class='hero'><div class='hero-l'><div class='hero-k'>{t('outlook')}"
-            f"<span class='chip' style='color:{_rcol(DI)}'>{_rname(DI)}</span></div>"
-            f"<div class='verdict' role='heading' aria-level='1'>{t('v_'+vkey)}</div>"
-            f"<p class='verdict-sub'>{t('v_detail').format(di=DI)} "
-            f"<span>{t('v_'+vkey+'_hint')}</span></p>"
-            f"<p class='live'>{t('live_hint')}</p></div>"
-            + _readouts_html(ts, params, heal) + "</div>")
+            f"<div class='mast-client'>CBIC × TUAT</div></div>")
 
 @st.cache_resource(max_entries=16, show_spinner=False)
 def _charts_cached(key, _ts, label):
@@ -1951,6 +1955,15 @@ def _on_studio():
     """Edits on the 3D line (drag, add or remove a burst) land here before the
     rerun, so the physics and every view recompute with the new bursts."""
     v = st.session_state.get("studio") or {}
+    if v.get("load"):                      # "Load this recipe" on the worst / best case
+        oid = v["load"]
+        if oid in SCENARIOS:
+            _pick_case(oid)
+        elif oid.startswith("drl_"):
+            r = (st.session_state.get("drl_best") or {}).get(oid[4:])
+            if r:
+                _apply_recipe(r, r["T_fill"], r["melt"], r["late"])
+        return
     reh = st.session_state.get("reheat")
     if reh is None or not v.get("bursts"):
         return
@@ -1958,8 +1971,8 @@ def _on_studio():
     reh["mode"] = "pulsed"; reh["custom"] = True
     _sync_pattern(reh); _bump_bursts()
 
-def _view(ts, bursts=None):
-    """One timeline in the shape the 3D line expects."""
+def _view(ts, h_cool, bursts=None):
+    """One case in the shape the stage expects: timeline, line layout, summary."""
     mode = ts.get("reheat_mode", "sequential")
     rnd = lambda a, k: [round(float(x), k) for x in a]
     if bursts is None:
@@ -1973,27 +1986,31 @@ def _view(ts, bursts=None):
         bursts=bursts if mode == "pulsed" else [],
         seq=([float(ts["reheat_start"]), float(ts["reheat_end"])]
              if mode == "sequential" and float(ts["t_reheat"]) > 0 else None),
-        zones=[{"T": float(z["T"]), "d": float(z["duration"])} for z in ts["zones"]])
+        zones=[{"T": float(z["T"]), "d": float(z["duration"])} for z in ts["zones"]],
+        hero=_hero_data(ts, h_cool))
 
-def _studio(ts, params, opts):
+def _studio(ts, params, opts, rev):
+    """The stage: your recipe, plus the worst case and best option to switch to.
+    rev changes with the recipe, so the stage goes back to "Your recipe"
+    whenever the recipe changes (sidebar, optimiser, Cases tab)."""
     reh = params["reheat"]
     lab = {k[3:]: t(k) for k in TR["en"] if k.startswith("ls_")}
     lab.update(min=t("min"), zone=t("zone_n"), reheat=t("rb_reheat_seg"), final=t("rb_final"),
-               play=t("play"), pause=t("pause"))
+               play=t("play"), pause=t("pause"), live=t("live_hint"))
     alts = {}
     if opts:
         worst, best = _worst_best(opts)
         for k, o in (("worst", worst), ("best", best)):
-            alts[k] = dict(_view(o["ts"]), name=o["name"], peak=o["peak"])
+            alts[k] = dict(_view(o["ts"], o["h_cool"]), name=o["name"], peak=o["peak"], id=o["id"])
     _line_studio(
-        **_view(ts, [[float(s), int(d)] for s, d in reh.get("bursts", [])]),
+        **_view(ts, params["h_cool"], [[float(s), int(d)] for s, d in reh.get("bursts", [])]),
         geo={"L": L_COOL, "r": (LANE_TOP - LANE_BOT) / 2, "bw": BELT_W, "R": R_S, "H": H_S},
         heat=[[T, c] for T, c in HEAT_STOPS],
         risk=[[0.80, RISK_COL["CRITICAL"], t("risk_critical")],
               [0.50, RISK_COL["WARNING"], t("risk_warning")],
               [0.25, RISK_COL["CAUTION"], t("risk_caution")],
               [0.0, RISK_COL["SAFE"], t("risk_safe")]],
-        lab=lab, editable=(ts.get("reheat_mode") == "pulsed"), alts=alts,
+        lab=lab, editable=(ts.get("reheat_mode") == "pulsed"), alts=alts, rev=str(rev),
         key="studio", default=None, on_change=_on_studio)
 
 # ── Cases tab: every preset, worst case to best option, and the optimiser ──
@@ -2230,32 +2247,9 @@ html,body,.stApp{color:var(--frost);font-family:var(--font)!important;
 .modebar{background:transparent!important}
 hr{border-color:var(--rule)!important}
 
-/* Masthead + hero: the verdict beside the instrument read-outs */
-.mast{display:flex;justify-content:space-between;align-items:center;margin-bottom:2.4rem}
+/* Masthead */
+.mast{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.4rem}
 .mast-client{color:var(--frost3);font-size:.85rem}
-.hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:3.2rem;align-items:end;
-  margin-bottom:2.2rem}
-.hero-k{display:flex;align-items:center;gap:.8rem;color:var(--frost3);font-size:.9rem}
-.chip{display:inline-flex;align-items:center;gap:.4rem;padding:.16rem .62rem .18rem;
-  border:1px solid currentColor;border-radius:999px;font-size:.78rem;font-weight:600}
-.chip::before{content:"";width:.42rem;height:.42rem;border-radius:50%;background:currentColor}
-.verdict{font-stretch:120%;font-weight:600;font-size:clamp(2.2rem,3.9vw,3.6rem);line-height:1.02;
-  letter-spacing:-.02em;color:var(--frost);margin:.6rem 0 .85rem;max-width:18ch;
-  animation:rise .9s cubic-bezier(.2,.7,.1,1) both}
-@keyframes rise{from{opacity:0;transform:translateY(16px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
-.verdict-sub{color:var(--frost2)!important;font-size:1.04rem;line-height:1.6;max-width:60ch;margin:0}
-.verdict-sub span{color:var(--frost3)}
-.live{color:var(--frost3)!important;font-size:.8rem;margin:.6rem 0 0}
-
-/* Read-outs: one instrument panel in two columns, not cards */
-.readouts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0}
-.ro{padding:.8rem 0 .75rem 1.15rem;border-left:1px solid var(--rule);border-top:1px solid var(--rule)}
-.ro:nth-child(-n+2){border-top:none;padding-top:.1rem}
-.ro-l{color:var(--frost3);font-size:.8rem}
-.ro-v{color:var(--frost);font-size:1.5rem;font-weight:600;font-stretch:108%;
-  font-variant-numeric:tabular-nums;margin:.22rem 0 .12rem;line-height:1.1;white-space:nowrap}
-.ro-v small{font-size:.88rem;font-weight:500;color:var(--frost2);margin-left:.2rem}
-.ro-n{font-size:.78rem;color:var(--frost3)}
 .sf{color:var(--frost2)!important;font-size:.98rem;line-height:1.6;max-width:72ch;margin:0 0 1.1rem}
 
 /* Scenario cards: the native radio, restyled; strip + peak damage per card */
@@ -2343,6 +2337,11 @@ hr{border-color:var(--rule)!important}
 [class*='st-key-cl_'] button p,[class*='st-key-co_'] button p,[class*='st-key-ca_'] button p{
   font-size:.78rem!important}
 
+/* Remove-row buttons in the sidebar: a compact square, not a pill */
+[class*='st-key-del_'] button,[class*='st-key-bx_'] button{min-height:2.5rem!important;min-width:0!important;
+  width:100%!important;padding:0!important;border-radius:10px!important}
+[class*='st-key-del_'] button p,[class*='st-key-bx_'] button p{font-size:1.15rem!important;line-height:1!important}
+
 /* Advisor */
 .status{display:inline-flex;align-items:center;gap:.5rem;color:var(--frost2);font-size:.84rem;
   margin-bottom:.4rem}
@@ -2383,7 +2382,6 @@ hr{border-color:var(--rule)!important}
 
 @media (max-width:900px){
   [data-testid="stMainBlockContainer"],.block-container{padding:1.2rem 1rem 4rem!important}
-  .hero{grid-template-columns:1fr;gap:1.6rem}
   .mast{margin-bottom:1.6rem}
   .th{grid-template-columns:1fr;gap:1.1rem}
   .th-f{gap:1.4rem;flex-wrap:wrap}
@@ -2392,7 +2390,7 @@ hr{border-color:var(--rule)!important}
   .msg-u>div,.msg-a{max-width:100%}
 }
 @media (prefers-reduced-motion:reduce){
-  .verdict,.caret,.typing i,.stTabs [role="tabpanel"]>div{animation:none!important}
+  .caret,.typing i,.stTabs [role="tabpanel"]>div{animation:none!important}
 }
 </style>""", unsafe_allow_html=True)
 
@@ -2435,19 +2433,13 @@ hr{border-color:var(--rule)!important}
     Bi_live   = params["h_cool"]*R_M/K_TH
     rl_live   = _rlbl(DI_live)
     rc_live   = _rcol(DI_live)
-    heal_live = 0.0
-    if ats and ats["t_reheat"]>0:
-        ta_=np.array(ats["times"]); DI_=np.array(ats["DI"])
-        is_=int(np.argmin(np.abs(ta_-ats["reheat_start"])))
-        ie_=int(np.argmin(np.abs(ta_-ats["reheat_end"])))
-        heal_live=float(DI_[is_])-float(DI_[min(ie_,len(DI_)-1)])
 
     # ─── HERO ─────────────────────────────────────────────────────────────────
     # The run recomputes automatically whenever the setup changes (hash above),
     # so the hero always shows the current recipe; no separate Compute step.
+    st.markdown(_mast_html(), unsafe_allow_html=True)
     if ats:
-        st.markdown(_hero_html(DI_live, ats, params, heal_live), unsafe_allow_html=True)
-        _studio(ats, params, _options())
+        _studio(ats, params, _options(), _hash)
 
     # ─── TABS ─────────────────────────────────────────────────────────────────
     tab1,tab2,tab3,tab4,tab5 = st.tabs([

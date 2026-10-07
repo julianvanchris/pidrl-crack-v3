@@ -8,102 +8,122 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=BIZ+UDPGothic:wght@400;700&display=swap">
 <style>
-/* Line studio: the production line as a live 3D scene. Same "cold room" tokens
-   as the dashboard; the only warm colours are real temperatures. */
+/* Line studio: the verdict, the instruments and the production line in one
+   stage. "Cold room" tokens: the only warm colours are real temperatures. */
 :root{
   --night:#111926; --deck:#172131; --deck2:#1F2A3C;
   --frost:#E8EDF4; --frost2:#B0BACB; --frost3:#7E8AA0;
   --rule:rgba(205,219,240,.10); --rule2:rgba(205,219,240,.18);
-  --glass:rgba(14,21,32,.66); --hot:#DD6A3A;
+  --glass:rgba(12,18,27,.74); --hot:#DD6A3A;
   --font:Archivo,"BIZ UDPGothic","Helvetica Neue",Arial,sans-serif;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:transparent;color:var(--frost);font-family:var(--font);
   -webkit-font-smoothing:antialiased;overflow:hidden}
 button{font:inherit;color:inherit}
-.stage{position:relative;height:var(--h,600px);border-radius:20px;overflow:hidden;isolation:isolate;
+
+.stage{position:relative;height:var(--h,720px);border-radius:22px;overflow:hidden;isolation:isolate;
   user-select:none;-webkit-user-select:none;
-  background:radial-gradient(64% 56% at 52% 40%,rgba(95,155,211,.09),transparent 72%),
-             radial-gradient(130% 110% at 50% 0%,#1B2638 0%,#131B28 58%,#0D131D 100%);
+  background:radial-gradient(58% 68% at 68% 46%,rgba(95,155,211,.12),transparent 72%),
+             radial-gradient(130% 120% at 62% 0%,#1A2537 0%,#121A27 56%,#0B1119 100%);
   box-shadow:inset 0 0 0 1px rgba(205,219,240,.08)}
+.scene{position:absolute;inset:0}
 canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;
   cursor:grab;outline:none}
 canvas.grabbing{cursor:grabbing}
 canvas.hand{cursor:pointer}
-.labels{position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden}
+/* Scrim behind the verdict so the type stays legible over the scene */
+.scrim{position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:linear-gradient(90deg,rgba(11,17,25,.95) 0%,rgba(11,17,25,.82) 23%,rgba(11,17,25,.32) 39%,rgba(11,17,25,0) 50%)}
+.labels{position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden}
 .lbl{position:absolute;left:0;top:0;white-space:nowrap;font-size:11px;line-height:1.3;visibility:hidden;
   color:var(--frost2);text-align:center;will-change:transform;
   text-shadow:0 1px 2px rgba(8,12,18,.95),0 0 10px rgba(8,12,18,.85)}
 .lbl b{display:block;color:var(--frost);font-weight:600;font-size:12px;font-variant-numeric:tabular-nums}
 .lbl.zone{padding-bottom:6px;border-bottom:1px solid rgba(205,219,240,.28)}
-.lbl.hero{color:var(--frost);font-weight:600;font-size:12px;padding:3px 9px;border-radius:999px;
-  background:var(--glass);border:1px solid var(--rule2);font-variant-numeric:tabular-nums}
-.lbl.burst{color:var(--frost);font-size:11.5px;padding:4px 9px;border-radius:7px;
-  background:rgba(14,21,32,.82);border:1px solid rgba(221,106,58,.55)}
+.lbl.burst{color:var(--frost);font-size:11.5px;padding:4px 9px;border-radius:7px;text-shadow:none;
+  background:rgba(12,18,27,.85);border:1px solid rgba(221,106,58,.55)}
 .lbl[hidden]{display:none}
+.fallback{position:absolute;inset:0;display:grid;place-items:center;padding:0 24px;text-align:center;
+  color:var(--frost3);font-size:13px;z-index:1}
+.fallback[hidden]{display:none}
 
-/* Read-out of the stick under the probe */
-.probe{position:absolute;top:16px;left:16px;z-index:3;min-width:196px;padding:12px 15px 11px;pointer-events:none;
-  border-radius:14px;background:var(--glass);border:1px solid var(--rule);
-  -webkit-backdrop-filter:blur(14px) saturate(130%);backdrop-filter:blur(14px) saturate(130%)}
-.p-k{color:var(--frost3);font-size:11.5px}
-.p-t{display:flex;align-items:baseline;gap:6px;margin:2px 0 11px}
-.p-t b{font-size:34px;font-weight:600;font-stretch:118%;line-height:1;letter-spacing:-.02em;
+/* Read-out card that rides above the followed stick */
+.probe{position:absolute;left:0;top:0;z-index:4;min-width:178px;padding:10px 12px 9px;border-radius:12px;
+  background:var(--glass);border:1px solid var(--rule2);pointer-events:none;visibility:hidden;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);will-change:transform}
+.p-k{color:var(--frost3);font-size:11px}
+.p-t{display:flex;align-items:baseline;gap:5px;margin:1px 0 8px}
+.p-t b{font-size:26px;font-weight:600;font-stretch:118%;line-height:1;letter-spacing:-.02em;
   font-variant-numeric:tabular-nums}
-.p-t span{color:var(--frost3);font-size:13px}
-.p-g{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;margin:0;font-size:12.5px}
+.p-t span{color:var(--frost3);font-size:12px}
+.p-g{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0;font-size:12px}
 .p-g dt{color:var(--frost3)}
 .p-g dd{margin:0;text-align:right;color:var(--frost);font-variant-numeric:tabular-nums;white-space:nowrap}
-.p-g dd i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px}
-.p-g dd small{color:var(--frost3);font-size:11px;margin-left:6px}
-.p-s{display:flex;align-items:center;gap:8px;margin-top:11px;padding-top:9px;
-  border-top:1px solid var(--rule);font-size:12px;color:var(--frost2)}
+.p-g dd i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+.p-g dd small{color:var(--frost3);font-size:10.5px;margin-left:5px}
+.p-s{display:flex;align-items:center;gap:7px;margin-top:9px;padding-top:7px;border-top:1px solid var(--rule);
+  font-size:11.5px;color:var(--frost2)}
 .p-s::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--frost3);flex-shrink:0}
 .p-s.crack{color:#F1D7A0}
 .p-s.crack::before{background:#E9C46A}
 .p-s.hot{color:#F2C7A3}
 .p-s.hot::before{background:var(--hot);box-shadow:0 0 9px var(--hot);animation:beat 1s ease-in-out infinite}
 
-/* Views and colour scale */
-.views{position:absolute;top:16px;right:16px;z-index:3;display:flex;flex-direction:column;
-  align-items:flex-end;gap:10px}
+/* Top bar: which case the stage shows, and the camera */
+.topbar{position:absolute;top:18px;left:22px;right:18px;z-index:5;display:flex;align-items:flex-start;
+  gap:12px;pointer-events:none}
+.topbar>*{pointer-events:auto}
+.vright{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:9px}
 .seg{display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--glass);
   border:1px solid var(--rule);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 .seg button{border:0;background:transparent;color:var(--frost3);font-size:12.5px;font-weight:550;
-  padding:6px 13px;border-radius:999px;cursor:pointer;transition:background .18s,color .18s}
+  padding:7px 13px;border-radius:999px;cursor:pointer;transition:background .18s,color .18s;white-space:nowrap}
 .seg button:hover{color:var(--frost)}
 .seg button[aria-pressed="true"]{background:var(--frost);color:var(--night)}
-.scale{display:flex;align-items:center;gap:7px;color:var(--frost3);font-size:11px;
-  font-variant-numeric:tabular-nums}
-.scale i{width:96px;height:5px;border-radius:3px}
-/* Compare: run the line as your recipe, the worst case or the best option */
-.cmp{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:3;display:flex;
-  flex-direction:column;align-items:center;gap:6px;max-width:48%}
+.cases button{display:inline-flex;align-items:center;gap:8px;padding:8px 15px}
+.cases button i{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.cases button b{font-weight:650;font-variant-numeric:tabular-nums}
 .cmp[hidden]{display:none}
-.cmp .seg button{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
-.cmp .seg button i{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.cmp .seg button b{font-weight:600;font-variant-numeric:tabular-nums}
-.cmp p{margin:0;font-size:11.5px;color:var(--frost2);text-align:center;
-  text-shadow:0 1px 2px rgba(8,12,18,.95)}
-@media (max-width:1100px){
-  .cmp{top:60px;left:auto;right:16px;transform:none;align-items:flex-end;max-width:62%}
-  .cmp p{text-align:right}
-  .scale{display:none}
-}
+.scale{display:flex;align-items:center;gap:7px;color:var(--frost3);font-size:11px;font-variant-numeric:tabular-nums}
+.scale i{width:96px;height:5px;border-radius:3px}
 
-/* Dock: play, the thermal track (which is also the timeline), add burst */
-.dock{position:absolute;left:0;right:0;bottom:0;z-index:3;display:grid;
-  grid-template-columns:auto minmax(0,1fr) auto;gap:18px;align-items:center;padding:46px 18px 14px;
-  background:linear-gradient(180deg,transparent,rgba(13,19,29,.78) 44%,rgba(13,19,29,.93))}
+/* Verdict, editorial, over the scrim */
+.hero-ov{position:absolute;z-index:5;left:40px;top:92px;width:min(36%,520px);pointer-events:none}
+.hk{display:flex;align-items:center;gap:10px;color:var(--frost3);font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px 3px;border:1px solid currentColor;
+  border-radius:999px;font-size:12px;font-weight:600}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.verdict{font-stretch:120%;font-weight:600;font-size:clamp(30px,3.7vw,56px);line-height:1.03;
+  letter-spacing:-.02em;color:var(--frost);margin:12px 0 14px;text-wrap:balance}
+.vsub{color:var(--frost2);font-size:15px;line-height:1.6;margin:0;max-width:46ch}
+.vsub span{color:var(--frost3)}
+.live{color:var(--frost3);font-size:12.5px;margin:12px 0 0}
+.alt-cap{margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:var(--frost2);font-size:13px}
+.loadalt{pointer-events:auto;border:1px solid var(--frost);background:var(--frost);color:var(--night);
+  border-radius:999px;padding:8px 16px;font-size:12.5px;font-weight:600;cursor:pointer;transition:background .16s}
+.loadalt:hover{background:#fff}
+.swap{animation:swap .5s cubic-bezier(.2,.7,.1,1)}
+
+/* Bottom: one instrument strip, then the timeline */
+.bottom{position:absolute;left:0;right:0;bottom:0;z-index:5;padding:64px 22px 14px;
+  background:linear-gradient(180deg,transparent,rgba(11,17,25,.8) 34%,rgba(11,17,25,.95))}
+.strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:12px;padding-top:10px;
+  border-top:1px solid var(--rule)}
+.ro{padding:0 14px;border-left:1px solid var(--rule);min-width:0}
+.ro:first-child{border-left:none;padding-left:0}
+.ro span{display:block;color:var(--frost3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ro b{display:block;font-size:clamp(16px,1.55vw,22px);font-weight:600;font-stretch:108%;font-variant-numeric:tabular-nums;
+  line-height:1.15;margin:3px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ro b small{font-size:12px;font-weight:500;color:var(--frost2);margin-left:3px}
+.ro em{display:block;font-style:normal;color:var(--frost3);font-size:11.5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.dock{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:18px;align-items:center}
 .play{width:42px;height:42px;border-radius:50%;border:1px solid var(--rule2);
   background:rgba(232,237,244,.06);display:grid;place-items:center;cursor:pointer;transition:background .16s}
 .play:hover{background:rgba(232,237,244,.14)}
 .play svg{width:14px;height:14px;fill:var(--frost)}
 .track{position:relative;height:92px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer}
-/* Damage lane: damage index over the cycle; dashed line = 0.25, where cracks start */
-.tk-d{position:absolute;left:0;right:0;top:20px;height:18px}
-.tk-d svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.tk-d span{position:absolute;left:0;top:-2px;font-size:9.5px;color:var(--frost3);pointer-events:none}
 .tk-b{position:absolute;left:0;right:0;top:0;height:16px}
 .bk{position:absolute;top:4px;height:8px;border-radius:3px;background:var(--hot);
   box-shadow:0 0 10px rgba(221,106,58,.55)}
@@ -115,6 +135,10 @@ canvas.hand{cursor:pointer}
   border-radius:2px;opacity:0;transition:opacity .15s}
 .bk .rz::after{content:"";position:absolute;left:3px;top:3px;bottom:3px;width:2px;border-radius:1px;background:var(--frost)}
 .bk.ed:hover .rz,.bk.sel .rz{opacity:1}
+/* Damage lane: damage index over the cycle; dashed line = 0.25, where cracks start */
+.tk-d{position:absolute;left:0;right:0;top:20px;height:18px}
+.tk-d svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.tk-d span{position:absolute;left:0;top:-2px;font-size:9.5px;color:var(--frost3);pointer-events:none}
 .tk-band{position:absolute;left:0;right:0;top:42px;height:22px;border-radius:6px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -9px 16px rgba(0,0,0,.18);
   animation:pour 1.1s cubic-bezier(.2,.7,.1,1) both}
@@ -123,10 +147,9 @@ canvas.hand{cursor:pointer}
   overflow:hidden;white-space:nowrap;font-size:10.5px;line-height:11.5px;color:var(--frost3)}
 .tk-z b{display:block;color:var(--frost2);font-weight:550;font-size:11px;font-variant-numeric:tabular-nums}
 .tk-h{position:absolute;top:-4px;height:73px;width:0;outline:none;pointer-events:none}
-.tk-h::before{content:"";position:absolute;left:-1px;top:0;bottom:0;width:2px;border-radius:1px;
-  background:var(--frost)}
-.tk-h i{position:absolute;left:-8px;top:49px;width:16px;height:16px;border-radius:50%;
-  background:var(--frost);box-shadow:0 0 0 4px rgba(232,237,244,.16),0 2px 10px rgba(0,0,0,.4)}
+.tk-h::before{content:"";position:absolute;left:-1px;top:0;bottom:0;width:2px;border-radius:1px;background:var(--frost)}
+.tk-h i{position:absolute;left:-8px;top:49px;width:16px;height:16px;border-radius:50%;background:var(--frost);
+  box-shadow:0 0 0 4px rgba(232,237,244,.16),0 2px 10px rgba(0,0,0,.4)}
 .tk-h:focus-visible i{box-shadow:0 0 0 5px rgba(232,237,244,.45)}
 .dock-r{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
 .add{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--rule2);background:transparent;
@@ -137,71 +160,93 @@ canvas.hand{cursor:pointer}
 .add svg{width:12px;height:12px;stroke:var(--frost);stroke-width:2;fill:none}
 .add[hidden]{display:none}
 .tot{color:var(--frost3);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.stage.busy .dock::before{content:"";position:absolute;left:18px;right:18px;top:30px;height:1px;
+.stage.busy .bottom::before{content:"";position:absolute;left:22px;right:22px;top:52px;height:1px;
   background:linear-gradient(90deg,transparent,var(--frost),transparent) no-repeat;
   background-size:40% 100%;animation:scan 1s linear infinite}
 .hint{margin:10px 2px 0;color:var(--frost3);font-size:12px;line-height:1.5}
-.fallback{position:absolute;inset:0;display:grid;place-items:center;padding:0 24px;text-align:center;
-  color:var(--frost3);font-size:13px;z-index:1}
-.fallback[hidden]{display:none}
 :focus-visible{outline:2px solid var(--frost);outline-offset:2px}
 @keyframes pour{from{clip-path:inset(0 100% 0 0 round 6px)}to{clip-path:inset(0 0 0 0 round 6px)}}
 @keyframes scan{from{background-position:-40% 0}to{background-position:140% 0}}
 @keyframes beat{50%{opacity:.45}}
-@media (max-width:640px){
-  .probe{top:10px;left:10px;min-width:0;padding:8px 11px 8px}
-  .p-k,.p-s{display:none}
-  .p-t{margin:0 0 6px}
-  .p-t b{font-size:22px}
-  .p-g{font-size:11px;gap:3px 10px}
-  .views{top:10px;right:10px}
-  .seg button{padding:5px 9px;font-size:11.5px}
+@keyframes swap{from{opacity:0;transform:translateY(10px);filter:blur(5px)}to{opacity:1;transform:none;filter:none}}
+
+/* Narrow screens: the same pieces, stacked */
+@media (max-width:760px){
+  .stage{height:auto;display:flex;flex-direction:column;border-radius:18px}
+  .scrim{display:none}
+  .topbar{position:relative;top:auto;left:auto;right:auto;order:0;padding:12px 12px 0;
+    flex-direction:column;align-items:stretch;gap:8px}
+  .vright{margin-left:0;flex-direction:row;justify-content:flex-end}
   .scale{display:none}
-  .dock{grid-template-columns:auto minmax(0,1fr);gap:12px;padding:34px 12px 10px}
+  .cases{overflow-x:auto;max-width:100%}
+  .seg button,.cases button{padding:6px 10px;font-size:11.5px}
+  .hero-ov{position:relative;left:auto;top:auto;width:auto;order:1;padding:14px 16px 4px}
+  .verdict{font-size:27px;margin:8px 0 10px}
+  .vsub{font-size:13.5px}
+  .scene{position:relative;inset:auto;height:360px;order:2}
+  .bottom{position:relative;order:3;padding:10px 12px 12px;background:none}
+  .strip{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:12px}
+  .ro:nth-child(4){border-left:none;padding-left:0}
+  .ro{padding:0 10px}
+  .ro span,.ro b,.ro em{white-space:normal}
+  .ro b{font-size:17px}
+  .dock{grid-template-columns:auto minmax(0,1fr);gap:12px}
   .dock-r{grid-column:1/-1;flex-direction:row;justify-content:space-between;align-items:center}
+  .probe{min-width:0;padding:7px 10px}
+  .p-k,.p-s{display:none}
+  .p-t{margin:0 0 5px}
+  .p-t b{font-size:20px}
+  .p-g{font-size:11px;gap:2px 10px}
   .lbl span,.lbl b{font-size:10px}
-  .cmp{top:48px;right:10px}
-  .cmp p{display:none}
-  .cmp .seg button{padding:5px 8px}
   .tk-z div{font-size:9.5px}
+  .stage.busy .bottom::before{top:2px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <div class="stage" id="stage">
-  <canvas id="gl" tabindex="0" role="img"></canvas>
-  <div class="labels" id="labels"></div>
-  <div class="fallback" id="fallback" hidden></div>
-  <section class="probe" aria-live="polite">
-    <div class="p-k" id="pk"></div>
-    <div class="p-t"><b id="pt">0.0</b><span id="pmin"></span></div>
-    <dl class="p-g">
-      <dt id="ls"></dt><dd><i id="isw"></i><span id="ps"></span></dd>
-      <dt id="lc"></dt><dd><i id="icw"></i><span id="pc"></span></dd>
-      <dt id="ld"></dt><dd><span id="pd"></span><small id="pr"></small></dd>
-    </dl>
-    <div class="p-s" id="pst"></div>
-  </section>
-  <div class="views">
-    <div class="seg" role="group" id="views"></div>
-    <div class="scale"><span>15 °C</span><i id="scale"></i><span>100 °C</span></div>
+  <div class="scene" id="scene">
+    <canvas id="gl" tabindex="0" role="img"></canvas>
+    <div class="labels" id="labels"></div>
+    <div class="fallback" id="fallback" hidden></div>
+    <section class="probe" id="probe" aria-live="polite">
+      <div class="p-k" id="pk"></div>
+      <div class="p-t"><b id="pt">0.0</b><span id="pmin"></span></div>
+      <dl class="p-g">
+        <dt id="ls"></dt><dd><i id="isw"></i><span id="ps"></span></dd>
+        <dt id="lc"></dt><dd><i id="icw"></i><span id="pc"></span></dd>
+        <dt id="ld"></dt><dd><span id="pd"></span><small id="pr"></small></dd>
+      </dl>
+      <div class="p-s" id="pst"></div>
+    </section>
   </div>
-  <div class="cmp" id="cmp" hidden><div class="seg" role="group" id="cmpb"></div><p id="cmpc"></p></div>
-  <div class="dock">
-    <button class="play" id="play" type="button"></button>
-    <div class="track" id="track">
-      <div class="tk-b" id="tb"></div>
-      <div class="tk-d" id="dl"></div>
-      <div class="tk-band" id="band"></div>
-      <div class="tk-z" id="tz"></div>
-      <div class="tk-h" id="head" role="slider" tabindex="0" aria-valuemin="0"><i></i></div>
+  <div class="scrim"></div>
+  <header class="topbar" id="topbar">
+    <div class="cmp" id="cmp" hidden><div class="seg cases" role="group" id="cmpb"></div></div>
+    <div class="vright">
+      <div class="seg" role="group" id="views"></div>
+      <div class="scale"><span>15 °C</span><i id="scale"></i><span>100 °C</span></div>
     </div>
-    <div class="dock-r">
-      <button class="add" id="add" type="button" hidden>
-        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1v10M1 6h10"/></svg><span></span>
-      </button>
-      <span class="tot" id="tot"></span>
+  </header>
+  <section class="hero-ov" id="heroov" aria-live="polite"></section>
+  <div class="bottom" id="bottom">
+    <div class="strip" id="strip"></div>
+    <div class="dock">
+      <button class="play" id="play" type="button"></button>
+      <div class="track" id="track">
+        <div class="tk-b" id="tb"></div>
+        <div class="tk-d" id="dl"></div>
+        <div class="tk-band" id="band"></div>
+        <div class="tk-z" id="tz"></div>
+        <div class="tk-h" id="head" role="slider" tabindex="0" aria-valuemin="0"><i></i></div>
+      </div>
+      <div class="dock-r">
+        <button class="add" id="add" type="button" hidden>
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1v10M1 6h10"/></svg><span></span>
+        </button>
+        <span class="tot" id="tot"></span>
+      </div>
     </div>
   </div>
 </div>
@@ -225,17 +270,16 @@ window.addEventListener("message", e => {
 send("streamlit:componentReady", { apiVersion: 1 });
 
 // ── State ────────────────────────────────────────────────────────────────────
-let D = null;        // data from Python
+let BASE = null;     // your recipe, plus the worst case and best option in BASE.alts
+let alt = "mine";    // which one the stage shows
+let D = null;        // the case shown
 let L = {};          // labels in the active language
 let bursts = [];     // editable hot-air bursts: {s: start min, d: length s}
-let sel = -1;        // selected burst
-let hov = -1;        // hovered burst (3D)
+let sel = -1, hov = -1;
 let probe = 0;       // time under the probe, min
 let flow = 0;        // conveyor phase, min
 let playing = !reduced;
-let drag = null;     // the gesture in progress
-let pending = null;  // data that arrived during a gesture
-let dirty = true;    // the 3D view needs a redraw
+let drag = null, pending = null, dirty = true;
 let view = "overview";
 let THREE = null, W = null;
 
@@ -289,8 +333,6 @@ function timeNear(x, z) {
   return { t: best, d: Math.sqrt(bd) };
 }
 const xToT = x => clamp(x / D.geo.L * D.tc, 0, D.tc);
-
-// Process segments: cooling zones, the sequential reheat leg, final cooling.
 function segments() {
   const out = []; let acc = 0;
   D.zones.forEach((z, k) => {
@@ -309,8 +351,8 @@ function hotSpans() {
 const hotAt = t => hotSpans().some(h => t >= h.a && t < h.b);
 const pct = v => (100 * v / D.tt).toFixed(3) + "%";
 
-// ── DOM: probe read-out, track, views ───────────────────────────────────────
-const stage = $("stage"), track = $("track"), head = $("head"), tb = $("tb");
+// ── DOM: verdict, instruments, probe card, track ───────────────────────────
+const stage = $("stage"), scene = $("scene"), track = $("track"), head = $("head"), tb = $("tb");
 const PLAY = "<svg viewBox='0 0 14 14'><path d='M3 1.5v11l9.5-5.5z'/></svg>";
 const PAUSE = "<svg viewBox='0 0 14 14'><path d='M2.5 1.5h3v11h-3zM8.5 1.5h3v11h-3z'/></svg>";
 
@@ -335,6 +377,32 @@ function staticText() {
     `<button type="button" data-v="${v}" aria-pressed="${v === view}">${L[v]}</button>`).join("");
   $("fallback").textContent = L.nogl;
   setPlaying(playing);
+}
+
+// The verdict and the six instruments of the case shown.
+function drawHero(anim) {
+  const h = D.hero, ov = $("heroov");
+  ov.innerHTML =
+    `<div class="hk">${h.k}<span class="chip" style="color:${h.chip_col}">${h.chip}</span></div>` +
+    `<div class="verdict" role="heading" aria-level="1">${h.verdict}</div>` +
+    `<p class="vsub">${h.sub} <span>${h.hint}</span></p>` +
+    (alt === "mine" ? `<p class="live">${L.live}</p>`
+      : `<div class="alt-cap"><span>${fmt(L.cmp_cap, { name: D.name, t: D.tt.toFixed(0) })}</span>` +
+        `<button class="loadalt" type="button">${L.load_alt}</button></div>`);
+  $("strip").innerHTML = h.cells.map(([l, v, n, vc, nc]) =>
+    `<div class="ro"><span>${l}</span><b${vc ? ` style="color:${vc}"` : ""}>${v}</b>` +
+    `<em${nc ? ` style="color:${nc}"` : ""}>${n}</em></div>`).join("");
+  if (anim) for (const el of [ov, $("strip")]) { el.classList.remove("swap"); void el.offsetWidth; el.classList.add("swap"); }
+}
+function drawCompare() {
+  const A = BASE.alts || {}, box = $("cmp");
+  box.hidden = !(A.worst || A.best);
+  if (box.hidden) return;
+  const opt = (k, label, peak) => `<button type="button" data-a="${k}" aria-pressed="${alt === k}">` +
+    `<i style="background:${riskOf(peak).col}"></i>${label}<b>${peak.toFixed(2)}</b></button>`;
+  $("cmpb").setAttribute("aria-label", L.cmp);
+  $("cmpb").innerHTML = opt("mine", L.cmp_mine, Math.max(...BASE.DI)) +
+    (A.worst ? opt("worst", L.cmp_worst, A.worst.peak) : "") + (A.best ? opt("best", L.cmp_best, A.best.peak) : "");
 }
 
 function updateProbe() {
@@ -450,7 +518,7 @@ function removeBurst(i) {
   bursts.splice(i, 1); sel = -1; afterEdit();
 }
 function afterEdit() { drawTrack(); rebuildNozzles(); updateProbe(); commit(); }
-// Hand the burst list back to Python; the physics reruns and new data arrives.
+// Hand edits back to Python; the physics reruns and new data arrives.
 function commit() {
   send("streamlit:setComponentValue", {
     value: { bursts: bursts.map(b => [+b.s.toFixed(3), b.d]), at: Date.now() }, dataType: "json" });
@@ -508,59 +576,54 @@ head.addEventListener("keydown", e => {
 $("play").addEventListener("click", () => setPlaying(!playing));
 $("add").addEventListener("click", addBurst);
 $("views").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setView(b.dataset.v); });
+$("cmp").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setAlt(b.dataset.a); });
+// Load the case shown (worst case or best option) as your recipe.
+$("heroov").addEventListener("click", e => {
+  if (!e.target.closest(".loadalt") || alt === "mine" || !D.id) return;
+  send("streamlit:setComponentValue", { value: { load: D.id, at: Date.now() }, dataType: "json" });
+  stage.classList.add("busy");
+});
 document.addEventListener("keydown", e => {
   if (e.key === " " && (e.target === document.body || e.target.id === "gl")) { setPlaying(!playing); e.preventDefault(); }
 });
 
-// ── Frame height: the stage scales with the column width ───────────────────
+// ── Frame height: on wide screens the stage fills most of the window ────────
 let lastH = 0;
 function fitHeight() {
-  const w = document.documentElement.clientWidth || 800;
-  const h = Math.round(w < 640 ? 540 : clamp(w * 0.5, 500, 680));
-  document.documentElement.style.setProperty("--h", h + "px");
+  const w = document.documentElement.clientWidth || 900;
+  let vh = 900;
+  try { vh = window.parent.innerHeight || vh; } catch (err) { /* cross-origin: keep the default */ }
+  if (w >= 760) document.documentElement.style.setProperty("--h", Math.round(clamp(vh * .9, 640, 940)) + "px");
   const total = Math.ceil(document.body.getBoundingClientRect().height) + 2;
   if (Math.abs(total - lastH) > 1) { lastH = total; send("streamlit:setFrameHeight", { height: total }); }
   if (W) resize();
 }
 window.addEventListener("resize", fitHeight);
+try { window.parent.addEventListener("resize", fitHeight); } catch (err) { /* cross-origin */ }
 
 // ── Render message from Python ───────────────────────────────────────────────
-// BASE = your recipe; alts = the worst case and best option, shown on demand.
-let BASE = null, alt = "mine";
 function onRender(args) {
   if (drag) { pending = args; return; }
   const first = !BASE;
+  if (BASE && args.rev !== BASE.rev) alt = "mine";      // a new recipe arrived: show it
   BASE = args;
   if (alt !== "mine" && !(BASE.alts && BASE.alts[alt])) alt = "mine";
   stage.classList.remove("busy");
-  applyData();
+  applyData(false);
   if (first) loadThree();
 }
-function applyData() {
+function applyData(anim) {
   D = alt === "mine" ? BASE : { ...BASE, ...BASE.alts[alt], editable: false };
   L = D.lab || {};
   STOPS = D.heat.map(([T, h]) => [T, hex2rgb(h)]);
   bursts = (D.bursts || []).map(([s, d]) => ({ s: +s, d: +d }));
   if (sel >= bursts.length || alt !== "mine") sel = -1;
   probe = Math.min(probe, D.tt); flow = flow % D.tt;
-  buildPath(); staticText(); drawTrack(); drawCompare(); updateProbe(); fitHeight();
+  buildPath(); staticText(); drawHero(anim); drawCompare(); drawTrack(); updateProbe(); fitHeight();
   if (W) rebuildWorld();
   dirty = true;
 }
-function setAlt(a) { if (a !== alt) { alt = a; applyData(); } }
-function drawCompare() {
-  const A = BASE.alts || {}, box = $("cmp");
-  box.hidden = !(A.worst || A.best);
-  if (box.hidden) return;
-  const opt = (k, label, peak) => `<button type="button" data-a="${k}" aria-pressed="${alt === k}">` +
-    `<i style="background:${riskOf(peak).col}"></i>${label}<b>${peak.toFixed(2)}</b></button>`;
-  $("cmpb").setAttribute("aria-label", L.cmp);
-  $("cmpb").innerHTML = opt("mine", L.cmp_mine, Math.max(...BASE.DI)) +
-    (A.worst ? opt("worst", L.cmp_worst, A.worst.peak) : "") + (A.best ? opt("best", L.cmp_best, A.best.peak) : "");
-  const cur = alt === "mine" ? null : A[alt];
-  $("cmpc").textContent = cur ? fmt(L.cmp_cap, { name: cur.name, t: cur.tt.toFixed(0) }) : "";
-}
-$("cmp").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setAlt(b.dataset.a); });
+function setAlt(a) { if (a !== alt) { alt = a; applyData(true); } }
 
 // ── 3D world (three.js from the CDN; the track and read-out work without it) ─
 function loadThree() {
@@ -598,18 +661,18 @@ function initWorld() {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x111926, 90, 190);
+  const scene3 = new THREE.Scene();
+  scene3.fog = new THREE.Fog(0x111926, 90, 190);
   const camera = new THREE.PerspectiveCamera(30, 1, 0.5, 420);
-  scene.add(new THREE.HemisphereLight(0xd8e3f4, 0x0a0f17, 1.35));
-  const key = new THREE.DirectionalLight(0xffffff, 2.2);
+  scene3.add(new THREE.HemisphereLight(0xdde7f6, 0x0a0f17, 1.45));
+  const key = new THREE.DirectionalLight(0xffffff, 2.3);
   key.position.set(-10, 46, 30); key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   Object.assign(key.shadow.camera, { left: -36, right: 36, top: 26, bottom: -26, near: 4, far: 130 });
   key.shadow.bias = -0.0005; key.shadow.normalBias = 0.03; key.shadow.radius = 4;
   key.target.position.set(D.geo.L / 2 + 2, 0, 0);
-  scene.add(key, key.target);
-  const rim = new THREE.DirectionalLight(0x8fb3e6, 0.85); rim.position.set(44, 16, -36); scene.add(rim);
+  scene3.add(key, key.target);
+  const rim = new THREE.DirectionalLight(0x8fb3e6, 0.9); rim.position.set(44, 16, -36); scene3.add(rim);
 
   tex.glow = canvasTex(128, (g, s) => {
     const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
@@ -627,10 +690,17 @@ function initWorld() {
     gr.addColorStop(0, "rgba(0,0,0,1)"); gr.addColorStop(.55, "rgba(0,0,0,.55)"); gr.addColorStop(1, "rgba(0,0,0,0)");
     g.fillStyle = gr; g.fillRect(0, 0, s, s);
   });
+  // Belt surface: fine cross grooves, so the belt visibly runs when playing.
+  tex.belt = canvasTex(256, (g, s) => {
+    g.fillStyle = "#c3cbd7"; g.fillRect(0, 0, s, s);
+    g.fillStyle = "#97a1b0";
+    for (let x = 0; x < s; x += 32) g.fillRect(x, 0, 3, s);
+  });
   buildLUT();
 
-  W = { renderer, scene, camera, key, dyn: new THREE.Group(), sticks: [], nozzles: [], hits: [], jets: [], labels: [] };
-  scene.add(W.dyn);
+  W = { renderer, scene: scene3, camera, key, dyn: new THREE.Group(), sticks: [], nozzles: [], hits: [], jets: [],
+        labels: [], belts: [] };
+  scene3.add(W.dyn);
   buildStatic(); buildSticks(); buildHero(); bindCanvas();
   rebuildWorld();
   resize();
@@ -649,17 +719,19 @@ function resize() {
   if (view === "overview" || view === "top") Object.assign(Cg, viewGoal(view));
   dirty = true;
 }
-// The free band between the read-out (top) and the dock (bottom), as fractions.
-const SAFE = { top: .24, bot: .24 };
+// The free part of the scene: right of the verdict, below the top bar, above
+// the instruments (fractions of the scene). On narrow screens nothing overlaps.
+const SAFE = { top: .12, bot: .3, left: .38, right: .03 };
 function measureSafe() {
-  // Top margin from the camera pill, not the read-out: the read-out lets
-  // pointers through and only covers the corner, which is empty floor.
-  const s = stage.getBoundingClientRect(), k = track.getBoundingClientRect();
-  const top = Math.max(...[".views", ".cmp"].map(q => document.querySelector(q))
-    .filter(e => e && !e.hidden).map(e => e.getBoundingClientRect().bottom));
+  const s = scene.getBoundingClientRect();
   if (!s.height) return;
-  SAFE.top = clamp((top - s.top + 6) / s.height, .06, .45);
-  SAFE.bot = clamp((s.bottom - k.top + 14) / s.height, .08, .45);
+  if (document.documentElement.clientWidth < 760) { Object.assign(SAFE, { top: .06, bot: .06, left: .03, right: .03 }); return; }
+  const tb_ = $("topbar").getBoundingClientRect(), ov = $("heroov").getBoundingClientRect(),
+        bt = $("strip").getBoundingClientRect();
+  SAFE.top = clamp((tb_.bottom - s.top + 8) / s.height, .05, .4);
+  SAFE.bot = clamp((s.bottom - bt.top + 10) / s.height, .08, .5);
+  SAFE.left = clamp((ov.right - s.left + 24) / s.width, .03, .55);
+  SAFE.right = .03;
 }
 
 // Belt frame: shadow-catching floor, grid, bed, drum, rails, rollers, legs.
@@ -692,8 +764,8 @@ function buildStatic() {
   }
 }
 
-// Sticks: a cylinder whose body shades from the core temperature (bottom) to
-// the surface temperature (top), exactly like the 2D charts.
+// Sticks: the body shades from the core temperature (bottom) to the surface
+// temperature (top), like the charts.
 let STICK_W = null;
 function stickGeo() {
   const { R, H } = D.geo;
@@ -761,7 +833,7 @@ function crackSegments(seed) {
     }
   };
   const arms = 3 + Math.floor(r() * 3);
-  for (let k = 0; k < arms; k++) grow(ox, oz, k / arms * Math.PI * 2 + (r() - .5) * .8, R * .1, 0, 0);
+  for (let k = 0; k < arms; k++) grow(ox, oz, k / arms * Math.PI * 2 + (r() - .5) * .8, R * .07, 0, 0);
   return { segs: segs.sort((p, q) => p.o - q.o), ox, oz };
 }
 function ribbonGeo(segs, scale) {
@@ -782,16 +854,18 @@ function ribbonGeo(segs, scale) {
 let CRACK_EDGE = null;
 function addCrack(m, seed) {
   const { segs, ox, oz } = crackSegments(seed), { R, H } = D.geo;
-  CRACK_EDGE = CRACK_EDGE || new THREE.MeshBasicMaterial({ color: 0x0d0907, transparent: true, opacity: .8,
+  // Both layers are transparent so they draw in renderOrder: the dark groove
+  // first, the risk-coloured crack on top (an opaque core would sit under it).
+  CRACK_EDGE = CRACK_EDGE || new THREE.MeshBasicMaterial({ color: 0x0d0907, transparent: true, opacity: .7,
     side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
-  const edge = new THREE.Mesh(ribbonGeo(segs, 2.1), CRACK_EDGE);
-  const core = new THREE.Mesh(ribbonGeo(segs, 1), new THREE.MeshBasicMaterial({ color: 0xe9c46a,
-    side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }));
+  const edge = new THREE.Mesh(ribbonGeo(segs, 2.4), CRACK_EDGE);
+  const core = new THREE.Mesh(ribbonGeo(segs, 1), new THREE.MeshBasicMaterial({ color: 0xe9c46a, transparent: true,
+    opacity: 1, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }));
   edge.renderOrder = 2; core.renderOrder = 3;
   // The sink mark itself: a shallow dark dent where the arms start.
   const dent = new THREE.Mesh(new THREE.CircleGeometry(R * .5, 40), new THREE.MeshBasicMaterial({ color: 0x000000,
     transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-  dent.rotation.x = -Math.PI / 2; dent.position.set(ox, H + .006, oz);
+  dent.rotation.x = -Math.PI / 2; dent.position.set(ox, H + .006, oz); dent.renderOrder = 1;
   m.add(dent, edge, core);
   m.userData.crack = { edge, core, dent, n: segs.length };
 }
@@ -800,7 +874,7 @@ function paintCrack(m, di) {
   const k = 6 * Math.round(c.n * f);
   c.edge.geometry.setDrawRange(0, k); c.core.geometry.setDrawRange(0, k);
   c.edge.visible = c.core.visible = c.dent.visible = f > 0;
-  if (f > 0) { c.core.material.color.set(riskOf(di).col); c.dent.material.opacity = .32 * f; c.dent.scale.setScalar(.45 + .55 * f); }
+  if (f > 0) { c.core.material.color.set(riskOf(di).col); c.dent.material.opacity = .3 * f; c.dent.scale.setScalar(.45 + .55 * f); }
   return f;
 }
 function buildHero() {
@@ -818,46 +892,55 @@ function buildHero() {
   const g = new THREE.Group(); g.add(body, halo, glow, beam);
   W.scene.add(g);
   W.hero = { g, body, halo, glow };
-  W.heroLbl = label("hero", "");
   W.burstLbl = label("burst", "");
 }
 
-// Data-driven parts: plates, hot-air nozzles or the reheat tunnel, labels.
+// Data-driven parts: belt plates, hot-air nozzles or the reheat tunnel, labels.
 function disposeTree(o) {
   o.traverse(c => {
     if (c.geometry) c.geometry.dispose();
-    if (c.material && c.material !== W.steel) [].concat(c.material).forEach(m => m.dispose());
+    if (c.material && c.material !== W.steel) [].concat(c.material).forEach(m => {
+      if (m.map && m.map !== tex.glow) m.map.dispose();
+      m.dispose();
+    });
   });
 }
 function rebuildWorld() {
   if (!W) return;
-  const dyn = W.dyn; disposeTree(dyn); dyn.clear();
+  const dyn = W.dyn; disposeTree(dyn); dyn.clear(); W.belts = [];
   W.labels.filter(l => l.kind === "zone").forEach(l => l.el.remove());
   W.labels = W.labels.filter(l => l.kind !== "zone");
   const { L: Lx, r, bw } = D.geo, tc = D.tc, tt = D.tt, arc = Math.PI * r, ret = arc + Lx;
-  const mix = (hex, k) => new THREE.Color(hex).lerp(new THREE.Color(0x1a2333), k);
-  const plateMat = T => new THREE.MeshStandardMaterial({ color: mix(heatHex(T), .42), roughness: .66, metalness: .05,
-    emissive: new THREE.Color(heatHex(T)), emissiveIntensity: .1 });
+  // Belt: graphite with a hint of each zone's air temperature; the bright
+  // edge strip carries the zone colour. Grooves move with the line.
+  const mix = (hex, k) => new THREE.Color(hex).lerp(new THREE.Color(0x232c3b), k);
+  const beltTex = (w, lane) => {
+    const t = tex.belt.clone(); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(w, .1) / 1.6, 1); t.needsUpdate = true; W.belts.push({ t, lane }); return t;
+  };
+  const plateMat = (T, w, lane) => new THREE.MeshStandardMaterial({ color: mix(heatHex(T), .7),
+    map: w ? beltTex(w, lane) : null, roughness: .74, metalness: .08,
+    emissive: new THREE.Color(heatHex(T)), emissiveIntensity: .05 });
   const edgeMat = T => new THREE.MeshBasicMaterial({ color: new THREE.Color(heatHex(T)) });
   const put = (m, x, y, z) => { m.position.set(x, y, z); m.receiveShadow = true; dyn.add(m); return m; };
   for (const sg of segments()) {
-    const mat = plateMat(sg.T), tag = `<span>${sg.name}</span><b>${sg.T.toFixed(0)} °C</b>`;
+    const tag = `<span>${sg.name}</span><b>${sg.T.toFixed(0)} °C</b>`;
     if (sg.b <= tc + 1e-6) {               // cooling lane
       const x0 = sg.a / tc * Lx, x1 = sg.b / tc * Lx, w = Math.max(x1 - x0 - .14, .05);
-      put(new THREE.Mesh(new THREE.BoxGeometry(w, .3, 2 * bw), mat), (x0 + x1) / 2, -.15, -r);
-      put(new THREE.Mesh(new THREE.BoxGeometry(w, .07, .1), edgeMat(sg.T)), (x0 + x1) / 2, .005, -r + bw + .02);
+      put(new THREE.Mesh(new THREE.BoxGeometry(w, .3, 2 * bw), plateMat(sg.T, w, "top")), (x0 + x1) / 2, -.15, -r);
+      put(new THREE.Mesh(new THREE.BoxGeometry(w, .07, .12), edgeMat(sg.T)), (x0 + x1) / 2, .005, -r + bw + .02);
       label("zone", tag, [(x0 + x1) / 2, D.geo.H + 1.5, -r - bw - .6]);
     } else {                                // U-turn and return lane
       const f0 = (sg.a - tc) / Math.max(tt - tc, 1e-6) * ret, f1 = (sg.b - tc) / Math.max(tt - tc, 1e-6) * ret;
       if (f0 < arc) {
         const a0 = f0 / r, a1 = Math.min(f1, arc) / r;
-        const ring = new THREE.Mesh(new THREE.RingGeometry(r - bw, r + bw, 64, 1, Math.PI / 2 - a1, a1 - a0), mat);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(r - bw, r + bw, 64, 1, Math.PI / 2 - a1, a1 - a0), plateMat(sg.T, 0));
         ring.rotation.x = -Math.PI / 2; put(ring, Lx, .001, 0);
       }
       if (f1 > arc) {
         const xa = Lx - (f1 - arc), xb = Lx - (Math.max(f0, arc) - arc), w = Math.max(xb - xa - .14, .05);
-        put(new THREE.Mesh(new THREE.BoxGeometry(w, .3, 2 * bw), mat), (xa + xb) / 2, -.15, r);
-        put(new THREE.Mesh(new THREE.BoxGeometry(w, .07, .1), edgeMat(sg.T)), (xa + xb) / 2, .005, r + bw - .02);
+        put(new THREE.Mesh(new THREE.BoxGeometry(w, .3, 2 * bw), plateMat(sg.T, w, "ret")), (xa + xb) / 2, -.15, r);
+        put(new THREE.Mesh(new THREE.BoxGeometry(w, .07, .12), edgeMat(sg.T)), (xa + xb) / 2, .005, r + bw - .02);
         label("zone", tag, [(xa + xb) / 2, .2, r + bw + 1.6]);
         if (sg.hot) tunnel(xa, xb);
       }
@@ -885,8 +968,8 @@ function tunnel(xa, xb) {
   label("zone", `<b>${fmt(L.hot_air, { T: D.Tair.toFixed(0) })}</b>`, [(xa + xb) / 2, H + 2.9, r]);
 }
 
-// Hot-air nozzles over the cooling lane: one per burst (pulsed) or one long bar
-// (top reheat during cooling). Pulsed nozzles can be dragged along the lane.
+// Hot-air nozzles over the cooling lane: one per burst (pulsed) or one long
+// hood (top reheat during cooling). Pulsed nozzles can be dragged along the lane.
 function rebuildNozzles() {
   if (!W) return;
   W.nozzles.forEach(n => { disposeTree(n); W.scene.remove(n); });
@@ -920,7 +1003,6 @@ function nozzle(h) {
   pool.rotation.x = -Math.PI / 2; pool.position.y = .02;
   const hit = new THREE.Mesh(new THREE.BoxGeometry(Math.max(bx + 1.6, 2.2), y + .8, 2 * bw + 1), new THREE.MeshBasicMaterial({ visible: false }));
   hit.position.y = (y + .8) / 2; hit.userData.burst = h.i;
-  // Jets: a sheet of particles falling from the slot onto the stick tops.
   const n = Math.round(clamp(bx * 30, 26, 170)), p = new Float32Array(n * 3), ph = new Float32Array(n);
   for (let i = 0; i < n; i++) { p[i * 3] = (Math.random() - .5) * bx * .8; p[i * 3 + 2] = (Math.random() - .5) * (2 * bw - .6); ph[i] = Math.random(); }
   const jg = new THREE.BufferGeometry(); jg.setAttribute("position", new THREE.BufferAttribute(p, 3));
@@ -946,7 +1028,7 @@ function animateJets(dt, only) {
   }
 }
 
-// ── Projected HTML labels ────────────────────────────────────────────────────
+// ── Projected HTML labels and the probe card ────────────────────────────────
 function label(kind, html, at) {
   const el = document.createElement("div"); el.className = "lbl " + kind; el.innerHTML = html;
   $("labels").appendChild(el);
@@ -964,6 +1046,17 @@ function placeLabels() {
     if (!off) l.el.style.transform =
       `translate(${((v.x + 1) / 2 * r.width).toFixed(1)}px,${((1 - v.y) / 2 * r.height).toFixed(1)}px) translate(-50%,-100%)`;
   }
+  // The probe card rides on the beam above the followed stick, kept inside the scene.
+  const p = $("probe"), g = W.hero.g.position;
+  v.set(g.x, D.geo.H + 4.3, g.z).project(W.camera);
+  const off = v.z > 1 || Math.abs(v.x) > 1.3 || Math.abs(v.y) > 1.3;
+  p.style.visibility = off ? "hidden" : "visible";
+  if (!off) {
+    const w = p.offsetWidth, h = p.offsetHeight;
+    const x = clamp((v.x + 1) / 2 * r.width - w / 2, 8, r.width - w - 8);
+    const y = clamp((1 - v.y) / 2 * r.height - h - 4, 8, r.height - h - 8);
+    p.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
+  }
 }
 
 // ── Per-frame placement ──────────────────────────────────────────────────────
@@ -976,7 +1069,7 @@ function placeSticks() {
     if (i >= n) { m.visible = false; return; }
     const t = (i * dt + flow) % tt;
     const gap = Math.min(Math.abs(t - probe), tt - Math.abs(t - probe));
-    m.visible = gap >= dt * .5;           // the hero stick takes this slot
+    m.visible = gap >= dt * .5;           // the followed stick takes this slot
     if (!m.visible) return;
     const [x, z] = posAt(t); m.position.set(x, 0, z);
     paintStick(m, sample(D.Ts, t), sample(D.Tc, t));
@@ -989,8 +1082,6 @@ function placeHero() {
   paintStick(W.hero.body, sample(D.Ts, probe), sample(D.Tc, probe));
   W.heroCrack = paintCrack(W.hero.body, di);
   W.hero.halo.material.color.set(rk.col); W.hero.glow.material.color.set(rk.col);
-  W.heroLbl.at.set(x, D.geo.H + 4.5, z);
-  W.heroLbl.el.textContent = `${probe.toFixed(1)} ${L.min}`;
   const show = drag && drag.i != null ? drag.i : (hov >= 0 ? hov : sel);
   if (D.mode === "pulsed" && show >= 0 && bursts[show]) {
     const b = bursts[show], { xc } = nozzleSpan({ a: b.s, b: b.s + b.d / 60 });
@@ -998,6 +1089,14 @@ function placeHero() {
     W.burstLbl.el.textContent = fmt(L.burst, { n: show + 1, s: b.s.toFixed(2), d: b.d });
     W.burstLbl.at.set(xc, D.geo.H + 5.4, -D.geo.r);
   } else W.burstLbl.el.hidden = true;
+}
+// Belt grooves move at each lane's speed (top: cooling lane, ret: return lane).
+function runBelt() {
+  const { L: Lx, r } = D.geo, v1 = Lx / D.tc, v2 = (Math.PI * r + Lx) / Math.max(D.tt - D.tc, 1e-6);
+  for (const b of W.belts) {
+    const d = flow * (b.lane === "top" ? v1 : v2) / 1.6;
+    b.t.offset.x = (b.lane === "top" ? -1 : 1) * (d % 1);
+  }
 }
 
 // ── Camera: smoothed orbit around a target, three framed views ──────────────
@@ -1007,34 +1106,36 @@ function place(cam, th, ph, rad, t) {
   cam.position.set(t.x + rad * sp * Math.sin(th), t.y + rad * Math.cos(ph), t.z + rad * sp * Math.cos(th));
   cam.lookAt(t.x, t.y, t.z); cam.updateMatrixWorld();
 }
-// Frame the whole line inside the free band (between read-out and dock):
-// binary-search the distance, then slide the target so the line is centred.
+// Frame the whole line inside the free part of the scene: binary-search the
+// distance, then slide the target so the line sits in the middle of it.
+// Uses the belt's real outline: in a diagonal view a bounding box wastes room.
 function fitGoal(th, ph) {
-  // The belt's real outline (lane edges, U-turn arc), not its bounding box:
-  // in a diagonal view the box corners are empty space and shrink the line.
   const { L: Lx, r, bw, H } = D.geo, cam = W.camera, v = new THREE.Vector3(), pts = [], out = [];
   for (const x of [-3.6, Lx * .5, Lx]) for (const z of [-r - bw, -r + bw, r - bw, r + bw]) out.push([x, z]);
   for (let a = 0; a <= Math.PI + 1e-6; a += Math.PI / 8) out.push([Lx + (r + bw) * Math.sin(a), -(r + bw) * Math.cos(a)]);
   for (const [x, z] of out) for (const y of [-1, H + 2.3]) pts.push(new THREE.Vector3(x, y, z));
-  const x0 = -3.6, x1 = Lx + r + bw;
-  const yTop = 1 - 2 * SAFE.top, yBot = -1 + 2 * SAFE.bot, xMax = .93;
+  const yTop = 1 - 2 * SAFE.top, yBot = -1 + 2 * SAFE.bot, xL = -1 + 2 * SAFE.left, xR = 1 - 2 * SAFE.right;
   const ext = () => {
-    let a = 1e9, b = -1e9, m = 0;
-    for (const p of pts) { v.copy(p).project(cam); a = Math.min(a, v.y); b = Math.max(b, v.y); m = Math.max(m, Math.abs(v.x)); }
-    return [a, b, m];
+    let a = 1e9, b = -1e9, c = 1e9, d = -1e9;
+    for (const p of pts) { v.copy(p).project(cam); a = Math.min(a, v.y); b = Math.max(b, v.y); c = Math.min(c, v.x); d = Math.max(d, v.x); }
+    return [a, b, c, d];
   };
-  const tgt = new THREE.Vector3((x0 + x1) / 2, 0, 0);
+  const tgt = new THREE.Vector3((Lx + r + bw - 3.6) / 2, 0, 0);
+  const tanH = Math.tan(cam.fov * Math.PI / 360);
   let rad = 60;
   for (let pass = 0; pass < 3; pass++) {
     let lo = 8, hi = 700;
     for (let i = 0; i < 26; i++) {
       rad = (lo + hi) / 2; place(cam, th, ph, rad, tgt);
-      const [a, b, m] = ext();
-      if (m <= xMax && b - a <= yTop - yBot) hi = rad; else lo = rad;
+      const [a, b, c, d] = ext();
+      if (d - c <= xR - xL && b - a <= yTop - yBot) hi = rad; else lo = rad;
     }
     rad = hi; place(cam, th, ph, rad, tgt);
-    const [a, b] = ext(), up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
-    tgt.addScaledVector(up, ((a + b) / 2 - (yTop + yBot) / 2) * rad * Math.tan(cam.fov * Math.PI / 360));
+    const [a, b, c, d] = ext();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
+    tgt.addScaledVector(up, ((a + b) / 2 - (yTop + yBot) / 2) * rad * tanH);
+    tgt.addScaledVector(right, ((c + d) / 2 - (xL + xR) / 2) * rad * tanH * cam.aspect);
   }
   place(cam, C.th, C.ph, C.rad, new THREE.Vector3(C.tx, C.ty, C.tz));
   return { th, ph, rad, tx: tgt.x, ty: tgt.y, tz: tgt.z };
@@ -1153,7 +1254,7 @@ function loop(now) {
   if (playing && !drag) {
     const adv = dt * D.tt / CYCLE_S;
     probe = (probe + adv) % D.tt; flow = (flow + adv) % D.tt;
-    updateProbe(); animateJets(dt); active = true;
+    updateProbe(); animateJets(dt); runBelt(); active = true;
   }
   if (camUpdate(dt)) active = true;
   if (!active) return;
@@ -1163,9 +1264,9 @@ function loop(now) {
 }
 // Exposed for automated checks (Playwright): read-only snapshot of the state.
 window.__studio = () => ({ ready: !!W, probe, playing, bursts: bursts.map(b => [b.s, b.d]), sel, view,
-  mode: D && D.mode, alt, heroCrack: W ? W.heroCrack || 0 : 0,
+  mode: D && D.mode, alt, heroCrack: W ? W.heroCrack || 0 : 0, verdict: D && D.hero && D.hero.verdict,
   peakT: D ? D.times[D.DI.indexOf(Math.max(...D.DI))] : 0 });
-window.__studioXY = (what, i) => {     // screen point of the hero stick or nozzle i
+window.__studioXY = (what, i) => {     // screen point of the followed stick or nozzle i
   const o = what === "hero" ? W.hero.g : W.nozzles.find(n => n.userData.burst === i);
   const v = o.position.clone().setY(what === "hero" ? D.geo.H * .6 : D.geo.H + 2.05).project(W.camera);
   const r = $("gl").getBoundingClientRect();
