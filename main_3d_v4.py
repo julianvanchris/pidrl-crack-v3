@@ -611,7 +611,6 @@ TR = {
     "export_dl": "Generate file", "export_ready": "Download",
     "bg_dark": "Paper, as shown", "bg_white": "White, for journals",
     "bg_transparent": "Transparent",
-    "site_back": "Back to the site",
   },
   "ja": {
     "language": "言語",
@@ -851,7 +850,6 @@ TR = {
     "export_bg": "背景", "export_w": "幅（インチ）", "export_h": "高さ（インチ）",
     "export_dl": "ファイルを生成", "export_ready": "ダウンロード",
     "bg_dark": "紙色（表示どおり）", "bg_white": "白（学術誌向け）", "bg_transparent": "透明",
-    "site_back": "サイトに戻る",
   },
 }
 
@@ -1440,7 +1438,6 @@ def _sh(title):
 
 def sidebar():
     _STEP[0] = 0
-    st.sidebar.button(t("site_back"), key="to_site", on_click=_to_site, width='stretch')
     # Language first (read the widget state so this whole run uses it)
     _lang_map = {"English": "en", "日本語": "ja"}
     if "lang_sel" in st.session_state:
@@ -2176,8 +2173,8 @@ def _init_chat():
     if "chat_hist" not in ss:
         ss.chat_hist = []
 
-# ── The site: one page for clients (components/site); the dashboard below is
-#    the engineer view, at ?view=classic ─────────────────────────────────────
+# ── The site: one page for clients (components/site); the dashboard below
+#    opens only with ?debug=1 ─────────────────────────────────────────────────
 # The page computes the physics itself (components/site/engine.js, checked
 # against build_timeline and optimise by tools/check_engine.py). Python sends
 # the strings, the presets and the advisor's state, and answers the advisor
@@ -2189,7 +2186,7 @@ _site = components.declare_component(
 # the site letters its recipe steps a to f where the sidebar numbers them 1 to 7.
 SITE_TR = {
   "en": {
-    "s_loading": "Cooling the line", "s_engineer": "Engineer view", "s_menu": "Menu",
+    "s_loading": "Cooling the line", "s_menu": "Menu",
     "n_line": "The line", "n_recipe": "Recipe", "n_cases": "Cases", "n_heat": "Heat",
     "n_surface": "Surface", "n_report": "Report", "n_advisor": "Advisor",
     "s_hero_k": "CBIC × TUAT · LCWT401 deodorant stick",
@@ -2255,7 +2252,7 @@ SITE_TR = {
                     "search this for you."),
   },
   "ja": {
-    "s_loading": "ラインを冷却中", "s_engineer": "エンジニア表示", "s_menu": "メニュー",
+    "s_loading": "ラインを冷却中", "s_menu": "メニュー",
     "n_line": "ライン", "n_recipe": "レシピ", "n_cases": "ケース", "n_heat": "熱",
     "n_surface": "表面", "n_report": "レポート", "n_advisor": "アドバイザー",
     "s_hero_k": "CBIC × 東京農工大学 · LCWT401 デオドラントスティック",
@@ -2381,30 +2378,9 @@ def _site_ctx(rc):
             "h_cool": rc["h_cool"], "n_zones": len(rc["zones"]), "T_fill": rc["T_fill"], "risk": _rlbl(pk),
             "scenario": rc["scenario"], "zones": rc["zones"]}
 
-def _site_to_classic(rc, lang):
-    """Open the engineer view on the recipe the page shows: its sidebar starts
-    from that recipe instead of loading a preset."""
-    ss = st.session_state
-    sc = rc["scenario"] if rc["scenario"] in SCENARIOS else (
-        ss.get("sc_cur") if ss.get("sc_cur") in SCENARIOS else list(SCENARIOS)[2])
-    ss.zones = [dict(z) for z in rc["zones"]]
-    ss.reheat = {k: ([list(b) for b in v] if k == "bursts" else v) for k, v in rc["reheat"].items()}
-    ss.h_cool, ss.h_reheat, ss.T_fill = rc["h_cool"], rc["h_reheat"], rc["T_fill"]
-    ss.melt, ss.late_cool_T = rc["melt"], rc["late"]
-    ss.sc_cur = ss.last_sc = sc
-    ss["sc_pick_" + lang] = sc; ss._sc_lang = lang
-    ss.lang_sel = "日本語" if lang == "ja" else "English"
-    ss.zone_version = ss.get("zone_version", 0) + 1
-    ss.burst_version = ss.get("burst_version", 0) + 1
-    ss.pop("drl_report", None); ss.pop("drl_best", None)
-    st.query_params["view"] = "classic"
-
-def _to_site():
-    st.query_params.pop("view", None)
-
 def _on_site():
-    """A request from the page: ask, analyse, clear, or open the engineer view.
-    It runs before the rerun, so the page gets the answer with the next render."""
+    """A request from the page: ask, analyse or clear. It runs before the
+    rerun, so the page gets the answer with the next render."""
     ss = st.session_state
     v = ss.get("site") or {}
     nonce = str(v.get("nonce", ""))[:40]
@@ -2414,9 +2390,6 @@ def _on_site():
     lang = "ja" if v.get("lang") == "ja" else "en"
     ss.lang = lang
     kind = v.get("kind")
-    if kind == "view":
-        _site_to_classic(_site_recipe(v.get("recipe")), lang)
-        return
     adv = _advisor()
     ss.site_adv = {"ok": adv is not None, "online": False}
     if adv is None:
@@ -3672,8 +3645,9 @@ hr{border-color:var(--hair)!important}
 
 
 def main():
-    """The site for everyone; the engineer view (the dashboard) at ?view=classic."""
-    if str(st.query_params.get("view", "")) == "classic":
+    """The site. The old dashboard opens only with ?debug=1, for developers: it
+    holds the advisor's training tools (Excel upload, Ollama retraining)."""
+    if str(st.query_params.get("debug", "")) == "1":
         classic_main()
     else:
         site_main()

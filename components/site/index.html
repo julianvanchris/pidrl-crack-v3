@@ -32,13 +32,14 @@
   </nav>
   <div class="tb-r">
     <div class="lang" role="group" aria-label="Language"><button data-lang="en">EN</button><button data-lang="ja">日本語</button></div>
-    <button class="eng" id="engBtn" data-t="s_engineer">Engineer view</button>
     <button class="menu-btn" id="menuBtn" aria-controls="topnav" data-t="s_menu">Menu</button>
   </div>
 </header>
 <nav class="index" id="sideIndex" aria-label="Section index"></nav>
 
-<main>
+<!-- The page scrolls in <main>, not the document: Streamlit gives component frames scrolling="no", which stops the
+     wheel and touch from scrolling a frame's document but not a scroll container inside it. -->
+<main id="scroller" tabindex="-1">
 <!-- ================================================================ HERO -->
 <section id="hero" class="night hero" data-title="PI-DRL">
   <div class="wrap hero-in">
@@ -240,7 +241,7 @@
       <div><b data-t="m_model_h"></b><p data-t="m_model_b"></p></div>
       <div><b data-t="m_search_h"></b><p data-t="m_search_b"></p></div>
     </div>
-    <div class="colo-c"><span data-t="m_credit"></span><span>PI-DRL v5 · <a href="#" id="engLink" data-t="s_engineer">Engineer view</a></span></div>
+    <div class="colo-c"><span data-t="m_credit"></span><span>PI-DRL v5</span></div>
   </div>
 </footer>
 </main>

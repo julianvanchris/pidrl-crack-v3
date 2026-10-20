@@ -6,6 +6,7 @@
   "use strict";
   const E = window.PIDRL, CH = window.CHARTS, RISK = CH.RISK, esc = CH.esc;
   const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const SC = document.getElementById("scroller");          // the page's scroll container (see style.css)
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const MODE_KEY = { none: "mode_none", sequential: "mode_seq", simultaneous: "mode_sim", pulsed: "mode_pul" };
   const TARGET = 2;                                        // the default starting point: "Target", stepped cooling
@@ -701,9 +702,6 @@
     });
     $$(".lang button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
     $("#menuBtn").addEventListener("click", () => document.body.classList.toggle("menu-open"));
-    const toClassic = e => { e.preventDefault(); if (S.pend) return; S.pend = { kind: "view", nonce: "v" + Date.now() };
-      post({ kind: "view", view: "classic", nonce: S.pend.nonce, lang: LANG, recipe: payload() }); };
-    $("#engBtn").addEventListener("click", toClassic); $("#engLink").addEventListener("click", toClassic);
     $("#printBtn").addEventListener("click", () => window.print());
     $("#jsonBtn").addEventListener("click", download);
     $("#xrPlay").addEventListener("click", () => {
@@ -711,10 +709,12 @@
       if (xrPlay) { xrT0 = performance.now(); xrKick(); } else xrFrame(performance.now());
     });
 
-    // the top bar, progress, and the section under the bar (night sections turn the bar light)
+    // the top bar, progress, and the section under the bar (night sections turn the bar light). The page scrolls
+    // in #scroller (see style.css); the wheel over the fixed bar and index scrolls it too.
     const bar = $("#topbar"), prog = $("#progress"), secs = $$("main section, footer.colo");
+    [bar, $("#sideIndex")].forEach(el => el.addEventListener("wheel", e => { if (!document.body.classList.contains("menu-open")) SC.scrollBy({ top: e.deltaY, behavior: "auto" }); }, { passive: true }));
     const onScroll = () => {
-      const y = window.scrollY, h = document.documentElement.scrollHeight - window.innerHeight;
+      const y = SC.scrollTop, h = SC.scrollHeight - SC.clientHeight;
       bar.classList.toggle("solid", y > 30);
       prog.style.transform = `scaleX(${h > 0 ? (y / h).toFixed(4) : 0})`;
       let cur = secs[0];
@@ -722,10 +722,10 @@
       document.body.classList.toggle("on-night", cur.classList.contains("night"));
       $$("#topnav a, #sideIndex a").forEach(a => a.classList.toggle("on", a.dataset.go === cur.id));
     };
-    window.addEventListener("scroll", onScroll, { passive: true }); onScroll();
+    SC.addEventListener("scroll", onScroll, { passive: true }); onScroll();
 
     const reveal = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) { en.target.classList.add("in"); reveal.unobserve(en.target); } }),
-      { rootMargin: "0px 0px -8% 0px", threshold: 0.06 });
+      { root: SC, rootMargin: "0px 0px -8% 0px", threshold: 0.06 });
     $$("[data-reveal]").forEach(el => reveal.observe(el));
 
     // sections that do work only once near the screen: the 3D stage, the chart, the advisor's first analysis
@@ -742,7 +742,7 @@
         if (id === "cases") $$("#caseCols .cs-col").forEach(el => el.classList.add("in"));
         if (id === "advisor") autoAnalyse();
       } else if (en.isIntersecting && id === "heat" && S.heatStale) { renderHeat(false); S.heatStale = false; }
-    }), { rootMargin: "600px 0px 600px 0px", threshold: 0 });
+    }), { root: SC, rootMargin: "600px 0px 600px 0px", threshold: 0 });
     ["hero", "line", "cases", "heat", "advisor"].forEach(id => near.observe(document.getElementById(id)));
     document.addEventListener("visibilitychange", xrKick);
 
@@ -779,6 +779,7 @@
     wireRows(); wireControls(); wireCases(); wireAdvisor(); applyLang();
     compute(); renderAll(); renderAdvisor(); wirePage();
     xrT0 = performance.now(); xrKick();
+    SC.focus({ preventScroll: true });                     // so Page Down, Space and the arrow keys scroll the page
     const done = () => $("#loader").classList.add("done");
     Promise.race([document.fonts ? document.fonts.ready : Promise.resolve(), new Promise(r => setTimeout(r, 1800))]).then(() => setTimeout(done, 350));
   }

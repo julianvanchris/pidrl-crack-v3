@@ -14,8 +14,8 @@ the Oddech and Lab Seminar sites:
   `optimise`. `python tools/check_engine.py` (needs Node) runs both on every preset and the optimiser, and fails if
   they disagree.
 - The advisor still runs in Python: the page sends each question as the component value, and `_on_site` answers it.
-- The dashboard below is the engineer view at `?view=classic`. It has a "Back to the site" button and opens on the
-  recipe the site shows.
+- The dashboard described below opens only with `?debug=1`, for developers: it holds the advisor's training tools.
+- The page scrolls in its own container (`#scroller`), because Streamlit gives component frames `scrolling="no"`.
 
 ---
 
