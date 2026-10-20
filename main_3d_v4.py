@@ -611,6 +611,7 @@ TR = {
     "export_dl": "Generate file", "export_ready": "Download",
     "bg_dark": "Paper, as shown", "bg_white": "White, for journals",
     "bg_transparent": "Transparent",
+    "site_back": "Back to the site",
   },
   "ja": {
     "language": "言語",
@@ -850,6 +851,7 @@ TR = {
     "export_bg": "背景", "export_w": "幅（インチ）", "export_h": "高さ（インチ）",
     "export_dl": "ファイルを生成", "export_ready": "ダウンロード",
     "bg_dark": "紙色（表示どおり）", "bg_white": "白（学術誌向け）", "bg_transparent": "透明",
+    "site_back": "サイトに戻る",
   },
 }
 
@@ -1438,6 +1440,7 @@ def _sh(title):
 
 def sidebar():
     _STEP[0] = 0
+    st.sidebar.button(t("site_back"), key="to_site", on_click=_to_site, width='stretch')
     # Language first (read the widget state so this whole run uses it)
     _lang_map = {"English": "en", "日本語": "ja"}
     if "lang_sel" in st.session_state:
@@ -2141,7 +2144,334 @@ def _cases_tab(ats):
                 b2.button(t("cs_load_opt"), key=f"ca_{i}", width='stretch', type="primary",
                           on_click=_pick_case, args=(o["id"], r))
 
-def main():
+# ── The advisor (llm_advisor_v4): one instance per process ──────────────────
+@st.cache_resource(show_spinner=False, max_entries=2)
+def _load_advisor(version, mtime):
+    """The advisor, cached per process. Its key is the retrain counter and the
+    mtime of llm_advisor_v4.py, and the module is reloaded, so a deploy or a
+    retrain builds a fresh instance from the current code (Streamlit re-runs
+    this script but keeps already imported modules)."""
+    try:
+        import importlib
+        import llm_advisor_v4
+        importlib.reload(llm_advisor_v4)
+        return llm_advisor_v4.PILLMAdvisor()
+    except ImportError:
+        return None
+
+def _advisor():
+    import os
+    try:
+        mtime = os.path.getmtime(os.path.join(os.path.dirname(os.path.abspath(__file__)), "llm_advisor_v4.py"))
+    except OSError:
+        mtime = 0.0
+    return _load_advisor(st.session_state.get("advisor_version", 0), mtime)
+
+def _init_chat():
+    """Each browser session keeps its own conversation (the advisor is shared)."""
+    ss = st.session_state
+    if "chat_sid" not in ss:
+        import uuid
+        ss.chat_sid = uuid.uuid4().hex
+    if "chat_hist" not in ss:
+        ss.chat_hist = []
+
+# ── The site: one page for clients (components/site); the dashboard below is
+#    the engineer view, at ?view=classic ─────────────────────────────────────
+# The page computes the physics itself (components/site/engine.js, checked
+# against build_timeline and optimise by tools/check_engine.py). Python sends
+# the strings, the presets and the advisor's state, and answers the advisor
+# requests the page sends back as the component value.
+_site = components.declare_component(
+    "pidrl_site", path=str(Path(__file__).parent / "components" / "site"))
+
+# Strings of the site only. Keys that also exist in TR replace them on the site:
+# the site letters its recipe steps a to f where the sidebar numbers them 1 to 7.
+SITE_TR = {
+  "en": {
+    "s_loading": "Cooling the line", "s_engineer": "Engineer view", "s_menu": "Menu",
+    "n_line": "The line", "n_recipe": "Recipe", "n_cases": "Cases", "n_heat": "Heat",
+    "n_surface": "Surface", "n_report": "Report", "n_advisor": "Advisor",
+    "s_hero_k": "CBIC × TUAT · LCWT401 deodorant stick",
+    "s_hero_h": "Sink marks, <em>designed out.</em>",
+    "s_hero_lede": ("A physics-informed model of the stick as it cools on the line. Set the cooling and the "
+                    "hot air, see how the top surface answers, and find the recipe that keeps it flawless "
+                    "within the 30-minute cycle."),
+    "s_cta_recipe": "Open the recipe", "s_cta_cases": "See every case",
+    "s_xr_now": "Your recipe",
+    "s_xr_note": ("A section through the stick, through one cycle. The top surface and the core are the "
+                  "model's; the field between them is drawn from them."),
+    "s_xr_top": "Top surface", "s_xr_core": "Core", "s_xr_front": "Solidification front",
+    "s_xr_hot": "Hot air {T} °C", "s_xr_di": "Damage index",
+    "s_hm_band": "Mushy band, where the skin forms", "s_hm_30": "30 min",
+    "s_hm_crack": "Damage index where cracks begin", "s_hm_cycle": "The cycle the line must keep",
+    "s_scroll": "Scroll",
+    "s_line_h": "Your recipe, <em>running on the line.</em>",
+    "s_line_sf": ("Every stick on the belt takes the colour of its temperature. Follow one through the "
+                  "cycle, compare your recipe with the worst case and the best option, and drag the "
+                  "hot-air bursts to retime them."),
+    "s_recipe_k": "The recipe",
+    "s_recipe_h": "Set the line. <em>The surface answers.</em>",
+    "s_recipe_sf": ("Six steps, from a starting point to the optimiser. Every change reruns the model in "
+                    "your browser, so the outlook always shows this recipe."),
+    "s_see_line": "See it on the line",
+    "s_edited": "Edited. Choose it again to restore it.",
+    "s_l_fill": "Fill temperature", "s_l_rehT": "Hot air", "s_l_rehD": "Reheat time",
+    "s_l_rehW": "Top reheat time", "s_l_pn": "Bursts", "s_l_ps": "Burst length",
+    "s_l_pw": "Spread over", "s_l_melt": "Melting point", "s_l_late": "Late cooling air",
+    "s_l_hc": "Cooling air h", "s_l_hr": "Hot air h", "s_sec": "s",
+    "s_mseq_d": "The whole stick cools, then hot air reheats it.",
+    "s_msim_d": "The core keeps cooling while only the top is warmed.",
+    "s_mpul_d": "Short hot-air bursts on the top, as on CBIC's line.",
+    "s_burst": "Burst {n}", "s_col_di": "Damage index", "s_col_cycle": "Cycle",
+    "s_cases_h": "Every case, <em>from worst to best.</em>", "s_loaded": "loaded",
+    "s_chart_hint": "Point at the chart, or use the arrow keys, to read any moment.",
+    "s_surf_top": "Top view", "s_surf_sec": "Section, schematic",
+    "s_print": "Print or save as PDF", "s_json": "Download the recipe",
+    "s_analyse": "Analyse this run",
+    "s_an_empty": "The analysis of this recipe appears here.",
+    "s_an_stale": "The recipe has changed since the last analysis.",
+    "s_typing": "Thinking…", "s_typing2": "Still thinking. A model running on this computer can take a minute.",
+    "s_err": "The advisor could not answer just now. Try again.",
+    "s_adv_off": "Advisor unavailable",
+    "s_q1": "Why do sink marks form on the top surface?",
+    "s_q2": "What hot-air temperature keeps DI below 0.10?",
+    "s_q3": "How does the Biot number affect sink marks?",
+    "s_q4": "How does this compare with the production line?",
+    "live_hint": "Results update as you change the recipe.",
+    "sf_advisor": ("Answers draw on CBIC's trial and production data, and the advisor keeps the context of "
+                   "the conversation."),
+    "v_caution_hint": "Strengthen the top reheat, or try pulsed bursts in step d.",
+    "v_critical_hint": "Redesign the zone schedule, or run Optimise in step f.",
+    "sf_cases": ("Each preset grouped by its peak damage index and cycle time, with the reason. "
+                 "Optimise runs the search from that case; what it may change is set in step f of the recipe."),
+    "cs_scope": "Optimiser setting: {s}. Change it in step f of the recipe.",
+    "cs_need_reheat": ("With this top reheat kept, cooling alone cannot get below 0.25. Allow the top "
+                       "reheat to change in step f."),
+    "no_reheat": "No reheat in this recipe. Add top reheat in step d to heal the surface.",
+    "rec_warning": ("Sink marks are likely on the top surface (peak damage index {di:.3f}). "
+                    "Lower the cooling air h to 6 W/m²K or less, hold the first zone at "
+                    "70–75 °C, and raise the hot air to 90–100 °C. Optimise, in step f, can "
+                    "search this for you."),
+  },
+  "ja": {
+    "s_loading": "ラインを冷却中", "s_engineer": "エンジニア表示", "s_menu": "メニュー",
+    "n_line": "ライン", "n_recipe": "レシピ", "n_cases": "ケース", "n_heat": "熱",
+    "n_surface": "表面", "n_report": "レポート", "n_advisor": "アドバイザー",
+    "s_hero_k": "CBIC × 東京農工大学 · LCWT401 デオドラントスティック",
+    "s_hero_h": "ヒケを、<em>設計でなくす。</em>",
+    "s_hero_lede": ("ライン上で冷えていくスティックを、物理に基づいてモデル化しました。冷却と熱風を設定すると"
+                    "天面の状態が分かり、30分のサイクル内で天面をきれいに保つレシピを探せます。"),
+    "s_cta_recipe": "レシピを開く", "s_cta_cases": "全ケースを見る",
+    "s_xr_now": "現在のレシピ",
+    "s_xr_note": "1サイクルを通したスティックの断面です。天面と内部の温度はモデルの値で、その間の分布はそこから描いています。",
+    "s_xr_top": "天面", "s_xr_core": "内部", "s_xr_front": "固化前線",
+    "s_xr_hot": "熱風 {T} ℃", "s_xr_di": "損傷指数",
+    "s_hm_band": "表皮ができるマッシー帯", "s_hm_30": "30分",
+    "s_hm_crack": "亀裂が始まる損傷指数", "s_hm_cycle": "ラインが守るサイクル", "s_scroll": "スクロール",
+    "s_line_h": "あなたのレシピが、<em>ラインで動く。</em>",
+    "s_line_sf": ("ベルト上のスティックは温度に応じた色で表示されます。1本を追ってサイクルをたどり、"
+                  "最悪のケースや最良の選択肢と比べ、熱風バーストをドラッグしてタイミングを変えられます。"),
+    "s_recipe_k": "レシピ",
+    "s_recipe_h": "ラインを設定する。<em>天面が答える。</em>",
+    "s_recipe_sf": ("出発点から最適化まで6つの手順です。変更するたびにブラウザ内でモデルを再計算するので、"
+                    "見通しは常にこのレシピを示します。"),
+    "s_see_line": "ラインで見る",
+    "s_edited": "編集済み。もう一度選ぶと元に戻ります。",
+    "s_l_fill": "充填温度", "s_l_rehT": "熱風温度", "s_l_rehD": "再加熱時間",
+    "s_l_rehW": "上面の再加熱時間", "s_l_pn": "バースト回数", "s_l_ps": "バースト時間",
+    "s_l_pw": "分散する時間", "s_l_melt": "融点", "s_l_late": "後半の冷却空気",
+    "s_l_hc": "冷却空気 h", "s_l_hr": "熱風 h", "s_sec": "秒",
+    "s_mseq_d": "スティック全体を冷却した後、熱風で再加熱します。",
+    "s_msim_d": "内部を冷却し続けながら、上面だけを温めます。",
+    "s_mpul_d": "CBICのラインと同じく、上面に短い熱風バーストを当てます。",
+    "s_burst": "バースト{n}", "s_col_di": "損傷指数", "s_col_cycle": "サイクル",
+    "s_cases_h": "すべてのケースを、<em>最悪から最良まで。</em>", "s_loaded": "読み込み済み",
+    "s_chart_hint": "グラフにポインターを合わせるか矢印キーで、任意の時点の値を読めます。",
+    "s_surf_top": "上から見た図", "s_surf_sec": "断面（模式図）",
+    "s_print": "印刷またはPDF保存", "s_json": "レシピをダウンロード",
+    "s_analyse": "この条件を分析",
+    "s_an_empty": "このレシピの分析がここに表示されます。",
+    "s_an_stale": "前回の分析の後でレシピが変更されました。",
+    "s_typing": "考えています…", "s_typing2": "まだ考えています。この端末で動くモデルは1分ほどかかることがあります。",
+    "s_err": "アドバイザーが応答できませんでした。もう一度お試しください。",
+    "s_adv_off": "アドバイザーは利用できません",
+    "s_q1": "なぜ上面でヒケが発生するのですか？",
+    "s_q2": "DIを0.10未満にする熱風温度は？",
+    "s_q3": "ビオ数はヒケにどう影響しますか？",
+    "s_q4": "生産ラインのデータと比較してください",
+    "live_hint": "レシピを変えると、結果はすぐに更新されます。",
+    "sf_advisor": "回答はCBICの試験データと生産データに基づき、アドバイザーは会話の文脈を保ちます。",
+    "v_caution_hint": "上面の再加熱を強めるか、手順dでパルス加熱を試してください。",
+    "v_critical_hint": "ゾーン構成を見直すか、手順fの最適化を実行してください。",
+    "sf_cases": ("各プリセットを最大損傷指数とサイクル時間で分類し、理由を示します。「最適化」はそのケースから"
+                 "探索を行います。変更する範囲はレシピの手順fで設定します。"),
+    "cs_scope": "最適化の設定：{s}。レシピの手順fで変更できます。",
+    "cs_need_reheat": "この上面再加熱のままでは、冷却だけで0.25未満にできません。手順fで再加熱の変更を許可してください。",
+    "no_reheat": "この条件には再加熱がありません。手順dで上面の再加熱を加えると表面が回復します。",
+    "rec_warning": ("天面にヒケが出る可能性が高いです（最大損傷指数 {di:.3f}）。冷却空気 h を"
+                    "6 W/m²K以下にし、第1ゾーンを70〜75 ℃に保ち、熱風を90〜100 ℃に上げて"
+                    "ください。手順fの最適化で自動探索もできます。"),
+  },
+}
+assert set(SITE_TR["en"]) == set(SITE_TR["ja"]), "SITE_TR: English and Japanese keys differ"
+
+SITE_CSS = """<style>
+/* The site fills the window; Streamlit's own chrome is hidden, and the page stays bright while a request runs */
+header[data-testid="stHeader"], footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"],
+[data-testid="stStatusWidget"], [data-testid="stSidebar"], [data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] { background: #0F0E0C !important; overflow: hidden !important; }
+.block-container, [data-testid="stMainBlockContainer"] { padding: 0 !important; max-width: 100% !important; }
+[data-testid="stVerticalBlock"] { gap: 0 !important; }
+iframe[title*="pidrl_site"] { display: block; width: 100vw !important; height: 100vh !important; height: 100dvh !important; border: 0; }
+[data-stale="true"], .stale-element { opacity: 1 !important; transition: none !important; }
+</style>"""
+
+def _site_scenarios():
+    """The presets with their names and descriptions in both languages."""
+    out = []
+    for k, sc in SCENARIOS.items():
+        v = SCENARIO_TEXT.get(k) or (k, k, sc.get("desc", ""), sc.get("desc", ""))
+        out.append(dict(id=k, name={"en": v[0], "ja": v[1]}, desc={"en": v[2], "ja": v[3]},
+                        T_fill=sc.get("T_fill", T_FILL_DEF), zones=sc["zones"], reheat=sc["reheat"],
+                        h_cool=sc["h_cool"], h_reheat=sc.get("h_reheat", 12.0),
+                        melt=sc.get("melt", 67.0), late=sc.get("late_cool_T", 23.0)))
+    return out
+
+def _num(v, lo, hi, default):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return default
+    return float(np.clip(v, lo, hi)) if np.isfinite(v) else default
+
+def _site_recipe(r):
+    """The recipe the page sent, checked at the trust boundary: every number
+    clipped to its control's range, at most 8 zones and 12 bursts."""
+    r = r if isinstance(r, dict) else {}
+    zs = [z for z in (r.get("zones") or [])[:8] if isinstance(z, dict)]
+    zones = [{"T": _num(z.get("T"), 10, 95, 50.0), "duration": _num(z.get("duration"), 0.5, 35, 5.0),
+              "label": f"Zone {i + 1}"} for i, z in enumerate(zs)] or [dict(z) for z in DEFAULT_ZONES]
+    rh = r.get("reheat") if isinstance(r.get("reheat"), dict) else {}
+    mode = rh.get("mode") if rh.get("mode") in ("sequential", "simultaneous", "pulsed") else "sequential"
+    reh = {"T": _num(rh.get("T"), 40, 120, 70.0), "duration": _num(rh.get("duration"), 0, 15, 0.0), "mode": mode}
+    if mode == "pulsed":
+        reh.update(duration=0.0, pulses=int(_num(rh.get("pulses"), 1, 12, 5)),
+                   pulse_sec=int(_num(rh.get("pulse_sec"), 5, 60, 20)),
+                   pulse_window=_num(rh.get("pulse_window"), 2, 15, 6.0))
+        b = [[_num(x[0], 0, 280, 0.0), int(_num(x[1], 5, 60, 20))] for x in (rh.get("bursts") or [])[:12]
+             if isinstance(x, (list, tuple)) and len(x) == 2]
+        if b:
+            reh["bursts"] = b
+    sc = r.get("scenario")
+    return dict(T_fill=_num(r.get("T_fill"), 75, 88, T_FILL_DEF), zones=zones, reheat=reh,
+                h_cool=_num(r.get("h_cool"), 2, 20, 6.0), h_reheat=_num(r.get("h_reheat"), 5, 40, 12.0),
+                melt=_num(r.get("melt"), 40, 100, 67.0), late=_num(r.get("late"), 5, 30, 23.0),
+                scenario=sc if sc in SCENARIOS else "Custom")
+
+def _site_ctx(rc):
+    """What the advisor reads about a run, as the engineer view builds it,
+    from the Python model (the reference) rather than from the page."""
+    ts = build_timeline(rc["T_fill"], rc["zones"], rc["reheat"], rc["h_cool"], rc["h_reheat"], n_pts=120,
+                        melt=rc["melt"], late_cool_T=rc["late"])
+    pk = float(max(ts["DI"]))
+    return {"DI_peak": pk, "DI_final": float(ts["DI"][-1]), "DI_healed": _heal(ts), "t_total": ts["t_total"],
+            "Bi": rc["h_cool"] * R_M / K_TH, "T_reheat": rc["reheat"]["T"], "t_reheat": ts["t_reheat"],
+            "h_cool": rc["h_cool"], "n_zones": len(rc["zones"]), "T_fill": rc["T_fill"], "risk": _rlbl(pk),
+            "scenario": rc["scenario"], "zones": rc["zones"]}
+
+def _site_to_classic(rc, lang):
+    """Open the engineer view on the recipe the page shows: its sidebar starts
+    from that recipe instead of loading a preset."""
+    ss = st.session_state
+    sc = rc["scenario"] if rc["scenario"] in SCENARIOS else (
+        ss.get("sc_cur") if ss.get("sc_cur") in SCENARIOS else list(SCENARIOS)[2])
+    ss.zones = [dict(z) for z in rc["zones"]]
+    ss.reheat = {k: ([list(b) for b in v] if k == "bursts" else v) for k, v in rc["reheat"].items()}
+    ss.h_cool, ss.h_reheat, ss.T_fill = rc["h_cool"], rc["h_reheat"], rc["T_fill"]
+    ss.melt, ss.late_cool_T = rc["melt"], rc["late"]
+    ss.sc_cur = ss.last_sc = sc
+    ss["sc_pick_" + lang] = sc; ss._sc_lang = lang
+    ss.lang_sel = "日本語" if lang == "ja" else "English"
+    ss.zone_version = ss.get("zone_version", 0) + 1
+    ss.burst_version = ss.get("burst_version", 0) + 1
+    ss.pop("drl_report", None); ss.pop("drl_best", None)
+    st.query_params["view"] = "classic"
+
+def _to_site():
+    st.query_params.pop("view", None)
+
+def _on_site():
+    """A request from the page: ask, analyse, clear, or open the engineer view.
+    It runs before the rerun, so the page gets the answer with the next render."""
+    ss = st.session_state
+    v = ss.get("site") or {}
+    nonce = str(v.get("nonce", ""))[:40]
+    if not nonce or nonce == ss.get("site_done"):
+        return
+    ss.site_done = nonce; ss.site_err = ""
+    lang = "ja" if v.get("lang") == "ja" else "en"
+    ss.lang = lang
+    kind = v.get("kind")
+    if kind == "view":
+        _site_to_classic(_site_recipe(v.get("recipe")), lang)
+        return
+    adv = _advisor()
+    ss.site_adv = {"ok": adv is not None, "online": False}
+    if adv is None:
+        ss.site_err = "advisor"
+        return
+    _init_chat()
+    try:
+        info = adv.status()
+        ss.site_adv["online"] = bool(info.get("groq") or info.get("ollama_up"))
+        if kind == "clear":
+            ss.chat_hist = []; ss.chat_src = []; ss.site_fups = []
+            adv.clear_history(ss.chat_sid)
+        elif kind in ("chat", "analyze"):
+            rc = _site_recipe(v.get("recipe")); ctx = _site_ctx(rc); key = str(v.get("key", ""))[:4000]
+            if kind == "analyze":
+                ss.site_an = {"key": key, "text": adv.analyze(ctx), "src": getattr(adv, "_last_source", "")}
+            else:
+                q = str(v.get("q", "")).strip()[:1000]
+                if q:
+                    an = ss.get("site_an") or {}
+                    ans = "".join(adv.chat_stream(q, context=(an.get("text", "") if an.get("key") == key else "")[:600],
+                                                  sim_results=ctx, history=ss.chat_hist,
+                                                  session_id=ss.chat_sid, lang=lang))
+                    n_a = sum(1 for m in ss.chat_hist if m.get("role") == "assistant")
+                    srcs = (ss.get("chat_src") or []) + [getattr(adv, "_last_source", "")]
+                    ss.chat_src = srcs[-n_a:] if n_a else []
+                    ss.site_fups = [str(x) for x in (adv.suggest_followups(q, ans, lang=lang) or [])][:4]
+    except Exception as e:                  # the page shows a short note and stays usable
+        ss.site_err = type(e).__name__
+
+def site_main():
+    import os
+    _hydrate_env_from_secrets()
+    st.markdown(SITE_CSS, unsafe_allow_html=True)
+    ss = st.session_state
+    _init_chat()
+    hist = ss.chat_hist; srcs = list(ss.get("chat_src") or [])
+    n_a = sum(1 for m in hist if m.get("role") == "assistant")
+    srcs = ([""] * max(0, n_a - len(srcs)) + srcs)[-n_a:] if n_a else []
+    chat, k = [], 0
+    for m in hist:
+        src = ""
+        if m.get("role") == "assistant":
+            src = srcs[k] if k < len(srcs) else ""; k += 1
+        chat.append({"role": m.get("role", "user"), "content": str(m.get("content", "")), "src": src})
+    # The advisor loads on the first request, not with the page; until then Groq's key says whether it is online.
+    adv = ss.get("site_adv") or {"ok": True, "online": bool(os.environ.get("GROQ_API_KEY"))}
+    _site(tr={lg: {**TR[lg], **SITE_TR[lg]} for lg in ("en", "ja")}, scenarios=_site_scenarios(),
+          stage=getattr(_line_studio, "name", "main_3d_v4.line_studio"),
+          geo={"L": L_COOL, "r": (LANE_TOP - LANE_BOT) / 2, "bw": BELT_W, "R": R_S, "H": H_S},
+          heat=[[T, c] for T, c in HEAT_STOPS], chat=chat, fups=list(ss.get("site_fups") or []),
+          analysis=ss.get("site_an"), adv=adv, done=ss.get("site_done"), err=ss.get("site_err", ""),
+          lang=ss.get("lang", "en"), key="site", default=None, on_change=_on_site)
+
+def classic_main():
     # ─── Cloud secrets → env (deployment) ──────────────────────────────────
     _secret_keys_seen = _hydrate_env_from_secrets()
     # Developer/diagnostic mode: append ?debug=1 to the URL. Hides all
@@ -2685,39 +3015,10 @@ hr{border-color:var(--hair)!important}
     with tab5:
         st.markdown(_tab_head(t("th_advisor"), t("sf_advisor")), unsafe_allow_html=True)
 
-        # ── Load advisor (cached, but version-keyed so retraining doesn't
-        #    need a page reload — bumping advisor_version creates a fresh
-        #    cache entry while _load_advisor.clear() drops the old one) ──
+        # ── Load advisor (shared with the site; see _advisor) ──
         if "advisor_version" not in st.session_state:
             st.session_state.advisor_version = 0
-
-        # Deploy-safety: @st.cache_resource persists the advisor INSTANCE across
-        # reruns, and Streamlit re-execs this entry script fresh but does NOT
-        # re-import already-loaded modules. So after a git deploy without a full
-        # process restart, a stale advisor (old llm_advisor_v4 in sys.modules)
-        # would linger — causing "chat_stream() got an unexpected kwarg" when
-        # new main calls it with new params. Fix: key the cache on the advisor
-        # file's mtime AND importlib.reload the module, so any deploy rebuilds a
-        # fresh instance from current code automatically.
-        try:
-            import os as _os
-            _adv_mtime = _os.path.getmtime(
-                _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                              "llm_advisor_v4.py"))
-        except Exception:
-            _adv_mtime = 0.0
-
-        @st.cache_resource(show_spinner=False)
-        def _load_advisor(_version: int, _mtime: float):
-            try:
-                import importlib
-                import llm_advisor_v4
-                importlib.reload(llm_advisor_v4)   # pick up code from this deploy
-                return llm_advisor_v4.PILLMAdvisor()
-            except ImportError:
-                return None
-
-        advisor = _load_advisor(st.session_state.advisor_version, _adv_mtime)
+        advisor = _advisor()
 
         # ── Per-session conversation state ─────────────────────────────────
         # CRITICAL: the advisor above is @st.cache_resource — a SINGLE object
@@ -3368,6 +3669,14 @@ hr{border-color:var(--hair)!important}
             #         30–90 seconds (first query only — subsequent queries are
             #         fast).
             #         """)
+
+
+def main():
+    """The site for everyone; the engineer view (the dashboard) at ?view=classic."""
+    if str(st.query_params.get("view", "")) == "classic":
+        classic_main()
+    else:
+        site_main()
 
 
 if __name__=="__main__":

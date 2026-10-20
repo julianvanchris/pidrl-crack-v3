@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PI-DRL · Sink-mark control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=BIZ+UDPGothic:wght@400;700&family=Noto+Serif+JP:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- PI-DRL site: one page, served by main_3d_v4.py as a Streamlit component. The physics runs here
+     (engine.js, checked against the Python by tools/check_engine.py); the advisor's LLM runs in Python. -->
+<div id="loader" aria-hidden="true">
+  <svg class="ld-stick" viewBox="0 0 40 80"><defs><linearGradient id="ldg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B4532A"/><stop offset=".5" stop-color="#E6D9BF"/><stop offset="1" stop-color="#2E4A6E"/></linearGradient></defs><rect x="6" y="4" width="28" height="72" rx="14" fill="url(#ldg)"/></svg>
+  <div class="ld-word">PI-DRL</div><div class="ld-bar"><i></i></div><div class="ld-sub" data-t="s_loading">cooling the line</div>
+</div>
+<div class="grain" aria-hidden="true"></div>
+<div id="cursor" aria-hidden="true"><i></i></div>
+<div id="progress" aria-hidden="true"></div>
+
+<header class="topbar" id="topbar">
+  <a class="brand" href="#hero" data-go="hero">
+    <svg class="mark" viewBox="0 0 20 30" aria-hidden="true"><defs><linearGradient id="mk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B4532A"/><stop offset=".45" stop-color="#E6D9BF"/><stop offset="1" stop-color="#2E4A6E"/></linearGradient></defs><rect x="3" y="1" width="14" height="28" rx="7" fill="url(#mk)"/></svg>
+    <span class="brand-w">PI-DRL</span><span class="brand-d" data-t="brand_desc">Solidification control</span>
+  </a>
+  <nav class="topnav" id="topnav" aria-label="Sections">
+    <a href="#line" data-go="line" data-t="n_line">The line</a><a href="#recipe" data-go="recipe" data-t="n_recipe">Recipe</a>
+    <a href="#cases" data-go="cases" data-t="n_cases">Cases</a><a href="#heat" data-go="heat" data-t="n_heat">Heat</a>
+    <a href="#surface" data-go="surface" data-t="n_surface">Surface</a><a href="#report" data-go="report" data-t="n_report">Report</a>
+    <a href="#advisor" data-go="advisor" data-t="n_advisor">Advisor</a>
+  </nav>
+  <div class="tb-r">
+    <div class="lang" role="group" aria-label="Language"><button data-lang="en">EN</button><button data-lang="ja">日本語</button></div>
+    <button class="eng" id="engBtn" data-t="s_engineer">Engineer view</button>
+    <button class="menu-btn" id="menuBtn" aria-controls="topnav" data-t="s_menu">Menu</button>
+  </div>
+</header>
+<nav class="index" id="sideIndex" aria-label="Section index"></nav>
+
+<main>
+<!-- ================================================================ HERO -->
+<section id="hero" class="night hero" data-title="PI-DRL">
+  <div class="wrap hero-in">
+    <div class="hero-l">
+      <div class="kicker light" data-t="s_hero_k">CBIC × TUAT · LCWT401 deodorant stick</div>
+      <h1 class="hero-title" data-th="s_hero_h">Sink marks, <em>designed out.</em></h1>
+      <p class="hero-lede" data-t="s_hero_lede"></p>
+      <div class="hero-cta">
+        <a class="btn solid magnetic" href="#recipe" data-go="recipe" data-t="s_cta_recipe">Open the recipe</a>
+        <a class="btn ghost light magnetic" href="#cases" data-go="cases" data-t="s_cta_cases">See every case</a>
+      </div>
+    </div>
+    <figure class="xray" id="xray" aria-label="The stick in section, through the cycle">
+      <div class="xr-box"><canvas id="xrField" width="44" height="70" aria-hidden="true"></canvas><svg id="xraySvg" viewBox="0 0 520 560"></svg>
+        <button class="xr-play" id="xrPlay" aria-pressed="false">Pause</button></div>
+      <figcaption class="xr-cap">
+        <div><span data-t="s_xr_now">Your recipe</span><b id="xrDI">0.000</b><i class="chip" id="xrChip"></i></div>
+        <div class="xr-meta"><span id="xrCycle"></span><span id="xrVerdict"></span></div>
+      </figcaption>
+      <p class="xr-note" data-t="s_xr_note"></p>
+    </figure>
+  </div>
+  <div class="wrap hero-meta">
+    <div><span class="mono" id="hmBand">62–72 °C</span><span data-t="s_hm_band">mushy band, where the skin forms</span></div>
+    <div><span class="mono">0.25</span><span data-t="s_hm_crack">damage index where cracks begin</span></div>
+    <div><span class="mono" data-t="s_hm_30">30 min</span><span data-t="s_hm_cycle">the cycle the line must keep</span></div>
+    <div class="scroll-cue"><span data-t="s_scroll">Scroll</span><i></i></div>
+  </div>
+</section>
+
+<!-- ================================================================ 01 THE LINE -->
+<section id="line" class="night" data-title="The line" data-tk="n_line">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <div class="sec-num mono">01</div>
+      <div><div class="kicker light" data-t="n_line">The line</div>
+      <h2 class="sec-title" data-th="s_line_h">Your recipe, <em>running on the line.</em></h2>
+      <p class="stand" data-t="s_line_sf"></p></div>
+    </div>
+    <div class="stage-wrap" data-reveal><iframe id="stage" title="The production line in 3D" loading="eager"></iframe></div>
+  </div>
+</section>
+
+<!-- ================================================================ 02 RECIPE -->
+<section id="recipe" class="paper" data-title="Recipe" data-tk="n_recipe">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <div class="sec-num mono">02</div>
+      <div><div class="kicker" data-t="s_recipe_k">The recipe</div>
+      <h2 class="sec-title" data-th="s_recipe_h">Set the line. <em>The surface answers.</em></h2>
+      <p class="stand" data-t="s_recipe_sf"></p></div>
+    </div>
+    <div class="studio">
+      <div class="controls" id="controls">
+        <div class="ctl" data-reveal>
+          <div class="ctl-h"><b class="ctl-n">a</b><span data-t="step_start">Starting point</span></div>
+          <div class="presets" id="presets"></div>
+          <p class="note" id="preNote"></p>
+        </div>
+        <div class="ctl" data-reveal>
+          <div class="ctl-h"><b class="ctl-n">b</b><span data-t="step_fill">Fill</span></div>
+          <div class="sl" data-key="T_fill"></div>
+        </div>
+        <div class="ctl" data-reveal>
+          <div class="ctl-h"><b class="ctl-n">c</b><span data-t="cooling_zones">Cooling zones</span><em data-t="zones_help"></em></div>
+          <div class="zbar" id="zbar"></div>
+          <div class="zrows" id="zrows"></div>
+          <div class="row-btns"><button class="btn ghost sm" id="zAdd" data-t="add_zone">Add zone</button><button class="btn ghost sm" id="zReset" data-t="reset">Reset zones</button><span class="note" id="zNote"></span></div>
+        </div>
+        <div class="ctl" data-reveal>
+          <div class="ctl-h"><b class="ctl-n">d</b><span data-t="hot_air_reheat">Top reheat</span></div>
+          <div class="modes" id="modes"></div>
+          <div class="sl" data-key="reh_T"></div>
+          <div id="rehParams"></div>
+          <p class="note" id="rehNote"></p>
+        </div>
+        <div class="ctl" data-reveal>
+          <div class="ctl-h"><b class="ctl-n">e</b><span data-t="material_ambient">Material and air</span></div>
+          <div class="grid2c"><div class="sl" data-key="melt"></div><div class="sl" data-key="late"></div>
+          <div class="sl" data-key="h_cool"></div><div class="sl" data-key="h_reh"></div></div>
+          <p class="note" id="meltNote"></p>
+        </div>
+        <div class="ctl" data-reveal>
+          <div class="ctl-h"><b class="ctl-n">f</b><span data-t="drl_optimiser">Optimise</span><em data-t="drl_help"></em></div>
+          <div class="seg2" id="scope"></div>
+          <div class="opt-row"><button class="btn solid" id="optBtn" data-t="drl_run">Find the best recipe</button><span class="note" id="optNote"></span></div>
+          <div class="opt-res" id="optRes"></div>
+        </div>
+      </div>
+      <aside class="live" id="live" data-reveal>
+        <div class="live-in">
+          <div class="live-k"><span data-t="outlook">Top surface outlook</span><i class="chip" id="lvChip"></i></div>
+          <div class="live-di"><b id="lvDI">0.000</b><span data-t="ro_di">Peak damage index</span></div>
+          <p class="live-v" id="lvVerdict"></p>
+          <svg class="spark" id="lvSpark" viewBox="0 0 300 70" preserveAspectRatio="none"></svg>
+          <div class="live-g" id="lvGrid"></div>
+          <div class="checks" id="lvChecks"></div>
+          <button class="btn ghost sm" data-go="line" data-t="s_see_line">See it on the line</button>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 03 CASES -->
+<section id="cases" class="paper2" data-title="Cases" data-tk="n_cases">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <div class="sec-num mono">03</div>
+      <div><div class="kicker" data-t="n_cases">Cases</div>
+      <h2 class="sec-title" data-th="s_cases_h">Every case, <em>from worst to best.</em></h2>
+      <p class="stand" data-t="sf_cases"></p></div>
+    </div>
+    <div class="bignums" id="caseFigs" data-reveal></div>
+    <div class="cases-bar" data-reveal><p class="note" id="caseScope"></p><button class="btn ghost sm" id="caseAll" data-t="cs_opt_all">Optimise every case</button></div>
+    <div class="cases" id="caseCols"></div>
+  </div>
+</section>
+
+<!-- ================================================================ 04 HEAT -->
+<section id="heat" class="paper" data-title="Heat" data-tk="n_heat">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <div class="sec-num mono">04</div>
+      <div><div class="kicker" data-t="n_heat">Heat</div>
+      <h2 class="sec-title" data-t="th_temp">How the top surface cools</h2>
+      <p class="stand" data-t="sf_temp"></p></div>
+    </div>
+    <div class="bignums" id="heatFigs" data-reveal></div>
+    <div class="ch-legend" id="chLegend" data-reveal></div>
+    <div class="chart" id="chart" data-reveal></div>
+  </div>
+</section>
+
+<!-- ================================================================ 05 SURFACE -->
+<section id="surface" class="night" data-title="Surface" data-tk="n_surface">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <div class="sec-num mono">05</div>
+      <div><div class="kicker light" data-t="n_surface">Surface</div>
+      <h2 class="sec-title" data-t="th_crack">What the top surface looks like</h2>
+      <p class="stand" data-t="sf_crack"></p></div>
+    </div>
+    <div class="surf" id="surf" data-reveal></div>
+    <p class="surf-note" id="surfNote" data-reveal></p>
+  </div>
+</section>
+
+<!-- ================================================================ 06 REPORT -->
+<section id="report" class="paper" data-title="Report" data-tk="n_report">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <div class="sec-num mono">06</div>
+      <div><div class="kicker" data-t="n_report">Report</div>
+      <h2 class="sec-title" data-t="th_report">The recipe, checked</h2>
+      <p class="stand" data-t="sf_report"></p></div>
+    </div>
+    <blockquote class="rec" id="rec" data-reveal></blockquote>
+    <div class="rep" data-reveal>
+      <div><div class="rp-k" id="chkK"></div><ul class="rp-checks" id="chk"></ul></div>
+      <div><div class="rp-k" data-t="rep_recipe">Recipe</div><div id="recipeTbl"></div>
+        <div class="rp-k gap" data-t="rep_reheat">Reheat effect</div><div id="rehDl"></div></div>
+    </div>
+    <div class="rep-btns" data-reveal><button class="btn solid" id="printBtn" data-t="s_print">Print or save as PDF</button><button class="btn ghost" id="jsonBtn" data-t="s_json">Download the recipe</button></div>
+  </div>
+</section>
+
+<!-- ================================================================ 07 ADVISOR -->
+<section id="advisor" class="paper2" data-title="Advisor" data-tk="n_advisor">
+  <div class="wrap">
+    <div class="sec-head" data-reveal>
+      <div class="sec-num mono">07</div>
+      <div><div class="kicker" data-t="n_advisor">Advisor</div>
+      <h2 class="sec-title" data-t="th_advisor">Ask about this run</h2>
+      <p class="stand" data-t="sf_advisor"></p></div>
+    </div>
+    <div class="adv">
+      <div class="adv-chat" data-reveal>
+        <div class="adv-top"><div class="status" id="advStatus"></div><button class="btn ghost sm" id="chatClear" data-t="clear_chat">Clear conversation</button></div>
+        <div class="thread" id="thread"></div>
+        <div class="sugs" id="sugs"></div>
+        <form class="composer" id="composer"><input id="ask" autocomplete="off"><button class="btn solid" type="submit" data-t="send">Send</button></form>
+      </div>
+      <div class="adv-an" data-reveal>
+        <div class="kicker" data-t="detailed_analysis">Analysis of this run</div>
+        <div class="an" id="analysis"></div>
+        <button class="btn ghost sm" id="anBtn" data-t="s_analyse">Analyse this run</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ COLOPHON -->
+<footer class="colo paper" id="colo">
+  <div class="wrap">
+    <div class="kicker" data-t="m_k">How the model reads the line</div>
+    <div class="colo-g">
+      <div><b data-t="m_defect_h"></b><p data-t="m_defect_b"></p></div>
+      <div><b data-t="m_model_h"></b><p data-t="m_model_b"></p></div>
+      <div><b data-t="m_search_h"></b><p data-t="m_search_b"></p></div>
+    </div>
+    <div class="colo-c"><span data-t="m_credit"></span><span>PI-DRL v5 · <a href="#" id="engLink" data-t="s_engineer">Engineer view</a></span></div>
+  </div>
+</footer>
+</main>
+
+<script src="engine.js"></script>
+<script src="charts.js"></script>
+<script src="site.js"></script>
+</body>
+</html>

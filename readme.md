@@ -5,6 +5,18 @@ CBIC × TUAT | Julian Evan Chrisnanto | Particle & Transfer Laboratory, TUAT | 2
 
 A Streamlit dashboard that combines a Physics-Informed Neural Network (PINN), a Deep Reinforcement Learning (DRL) optimiser, and a local RAG-augmented LLM advisor to design and validate the cooling/reheat schedule for the **LCWT401 deodorant stick** production line, eliminating top-surface sink marks (ヒケ) while staying within a 30-minute cycle time.
 
+**The site (October 2026).** Opening the app now shows a single-page site, `components/site/`, in the design of
+the Oddech and Lab Seminar sites:
+
+- The hero shows a section through the stick, then the 3D line, the recipe in six steps with a live outlook, every
+  case from worst to best, the thermal chart, the surface, the report and the advisor. It is bilingual, EN and JA.
+- The physics runs in the browser (`components/site/engine.js`), ported line by line from `build_timeline` and
+  `optimise`. `python tools/check_engine.py` (needs Node) runs both on every preset and the optimiser, and fails if
+  they disagree.
+- The advisor still runs in Python: the page sends each question as the component value, and `_on_site` answers it.
+- The dashboard below is the engineer view at `?view=classic`. It has a "Back to the site" button and opens on the
+  recipe the site shows.
+
 ---
 
 ## Table of Contents
