@@ -1,10 +1,11 @@
 # Streamlit theme + server config (used locally and on Streamlit Community Cloud)
 [theme]
-base = "dark"
-primaryColor = "#E8EDF4"
-backgroundColor = "#111926"
-secondaryBackgroundColor = "#1F2A3C"
-textColor = "#E8EDF4"
+# "Editorial lab": warm paper and ink (the CSS in main() does the rest)
+base = "light"
+primaryColor = "#1F1D1A"
+backgroundColor = "#F7F5F0"
+secondaryBackgroundColor = "#EFEBE3"
+textColor = "#1F1D1A"
 font = "sans serif"
 
 [server]

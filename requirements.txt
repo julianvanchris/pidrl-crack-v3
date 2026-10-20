@@ -7,7 +7,8 @@
 # the advisor + export helpers below. Excluding torch keeps the cloud build
 # small and fast.
 # ─────────────────────────────────────────────────────────────────────────
-streamlit>=1.40
+streamlit==1.66.0       # pinned to the version the editorial UI was tested on
+pyarrow>=14             # custom components (Line Studio) need it since Streamlit 1.66
 plotly>=5.18,<6
 kaleido==0.2.1          # static PNG/SVG/PDF figure export (Linux-safe build)
 numpy>=1.24

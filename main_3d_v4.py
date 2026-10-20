@@ -25,23 +25,33 @@ H_S=H_M*100; R_S=R_M*100
 BELT_W=3.0; LANE_TOP=4.0; LANE_BOT=-4.0
 L_COOL=30.0; L_RH=20.0
 
-# ── Design system: "cold room" ─────────────────────────────────────────────
-# The interface is cool and monochrome; every warm hue on screen is a real
-# temperature. One thermal ramp (fixed °C domain) colours the stick, the belt
-# plates, the hero ribbon and the charts, so the same °C always looks the same.
-INK = dict(night="#111926", deck="#172131", deck2="#1F2A3C",
-           frost="#E8EDF4", frost2="#B0BACB", frost3="#7E8AA0",
-           rule="rgba(205,219,240,0.10)", rule2="rgba(205,219,240,0.18)")
-FONT = "Archivo, 'BIZ UDPGothic', 'Helvetica Neue', Arial, sans-serif"
-RISK_COL = {"SAFE":"#7CCBA6", "CAUTION":"#E9C46A",
-            "WARNING":"#EF9E59", "CRITICAL":"#E2573C"}
+# ── Design system: "editorial lab" ─────────────────────────────────────────
+# The paper, ink and hairlines of the Oddech and Lab Seminar sites; the line
+# itself is shown at night (Line Studio). Warm hues are still temperatures only:
+# one thermal ramp (fixed °C domain, indigo for cold to terracotta for hot)
+# colours the sticks, the belt plates, the strips and the report, so the same
+# °C always looks the same. Risk colours sit at a luminance that reads on both
+# the paper page and the night stage (contrast 3.6 or more on each).
+INK = dict(paper="#F7F5F0", paper2="#EFEBE3", paper3="#E7E1D6", white="#FBFAF7",
+           ink="#1F1D1A", ink2="#4A4640", grey="#8A847A",
+           hair="rgba(31,29,26,0.12)", hair2="rgba(31,29,26,0.24)",
+           night="#0F0E0C", nightText="#EDE8DF",
+           indigo="#2E4A6E", umber="#8C6A43", sand="#E6D9BF", hot="#9A4523")
+# The "cold room" names, kept for code written against them; on paper now.
+INK.update(frost=INK["ink"], frost2=INK["ink2"], frost3=INK["grey"],
+           rule=INK["hair"], rule2=INK["hair2"], deck=INK["white"], deck2=INK["paper2"])
+FONT  = "'Inter Tight', 'BIZ UDPGothic', 'Helvetica Neue', Arial, sans-serif"
+SERIF = "'Instrument Serif', 'Noto Serif JP', Georgia, serif"
+MONO  = "'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace"
+RISK_COL = {"SAFE":"#4F8A3A", "CAUTION":"#A8761A",
+            "WARNING":"#C2622B", "CRITICAL":"#D04A35"}
 
-HEAT_STOPS = [(15,"#2E5C9E"),(30,"#5F9BD3"),(45,"#BBD7E6"),(60,"#F0DDAE"),
-              (72,"#EEA35C"),(85,"#DD6A3A"),(100,"#B8382A")]
+HEAT_STOPS = [(15,"#2E4A6E"),(30,"#5D7FA6"),(45,"#A9BCCF"),(60,"#E6D9BF"),
+              (72,"#D9A066"),(85,"#B4532A"),(100,"#7A2A16")]
 HEAT_MIN, HEAT_MAX = HEAT_STOPS[0][0], HEAT_STOPS[-1][0]
 HEAT_SCALE = [[(T-HEAT_MIN)/(HEAT_MAX-HEAT_MIN), c] for T,c in HEAT_STOPS]
-DMG_SCALE  = [[0,"#7CCBA6"],[0.30,"#BBD7E6"],[0.55,"#E9C46A"],
-              [0.78,"#EF9E59"],[1,"#E2573C"]]
+DMG_SCALE  = [[0,"#86A866"],[0.30,"#DCD3B4"],[0.55,"#C99A3E"],
+              [0.78,"#C2622B"],[1,"#A63A26"]]
 
 def _hex2rgb(h):
     h=h.lstrip("#"); return tuple(int(h[i:i+2],16) for i in (0,2,4))
@@ -58,25 +68,25 @@ def _heat(T):
             return "#%02x%02x%02x" % tuple(round(x+(y-x)*f) for x,y in zip(a,b))
     return HEAT_STOPS[-1][1]
 
-_AX = dict(gridcolor=INK["rule"], linecolor=INK["rule2"], zeroline=False,
-           tickfont=dict(color=INK["frost3"], size=11),
-           title=dict(font=dict(color=INK["frost2"], size=12)))
-_AX3 = dict(gridcolor="rgba(205,219,240,0.06)", showbackground=False,
+_AX = dict(gridcolor=INK["hair"], linecolor=INK["hair2"], zeroline=False,
+           tickfont=dict(family=MONO, color=INK["grey"], size=10.5),
+           title=dict(font=dict(color=INK["ink2"], size=12)))
+_AX3 = dict(gridcolor="rgba(31,29,26,0.08)", showbackground=False,
             zeroline=False, showspikes=False,
-            tickfont=dict(color=INK["frost3"], size=10),
-            title=dict(font=dict(color=INK["frost3"], size=11)))
+            tickfont=dict(family=MONO, color=INK["grey"], size=10),
+            title=dict(font=dict(color=INK["grey"], size=11)))
 pio.templates["pidrl"] = go.layout.Template(layout=dict(
-    font=dict(family=FONT, color=INK["frost2"], size=12),
-    title=dict(font=dict(family=FONT, color=INK["frost"], size=15)),
+    font=dict(family=FONT, color=INK["ink2"], size=12),
+    title=dict(font=dict(family=SERIF, color=INK["ink"], size=21)),
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-    colorway=[INK["frost"],"#5F9BD3","#EEA35C","#7CCBA6","#F0DDAE","#DD6A3A"],
+    colorway=[INK["ink"],INK["indigo"],INK["umber"],RISK_COL["SAFE"],"#B4532A",INK["grey"]],
     xaxis=_AX, yaxis=_AX,
     scene=dict(xaxis=_AX3, yaxis=_AX3, zaxis=_AX3, bgcolor="rgba(0,0,0,0)"),
-    hoverlabel=dict(bgcolor=INK["deck"], bordercolor=INK["rule2"],
-                    font=dict(family=FONT, color=INK["frost"], size=12)),
-    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=INK["frost2"], size=11)),
+    hoverlabel=dict(bgcolor=INK["white"], bordercolor=INK["hair2"],
+                    font=dict(family=FONT, color=INK["ink"], size=12)),
+    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=INK["ink2"], size=11)),
 ))
-pio.templates.default = "plotly_dark+pidrl"
+pio.templates.default = "plotly_white+pidrl"
 
 DEFAULT_ZONES=[
     {"T":65.0,"duration":6.0,"label":"Zone 1"},
@@ -292,10 +302,10 @@ def _md_to_html(content, bullet_color=INK["frost3"]):
     *italic*, bullet / numbered lists) renders properly in our custom HTML
     cards instead of showing literal asterisks. HTML is escaped first."""
     safe = (content or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    safe = re.sub(r"\*\*(.+?)\*\*", r'<strong style="color:#E8EDF4;font-weight:600">\1</strong>', safe)
+    safe = re.sub(r"\*\*(.+?)\*\*", r'<strong style="color:#1F1D1A;font-weight:600">\1</strong>', safe)
     safe = re.sub(r"`([^`]+?)`",
-                  r'<code style="background:#1F2A3C;border-radius:4px;padding:1px 5px;'
-                  r'font-size:.86em;color:#E8EDF4">\1</code>', safe)
+                  r'<code style="background:#EFEBE3;border-radius:4px;padding:1px 5px;'
+                  r'font-size:.86em;color:#1F1D1A;font-family:JetBrains Mono,monospace">\1</code>', safe)
     safe = re.sub(r"(?<![\*\w])\*([^\*\n]+?)\*(?![\*\w])", r"<em>\1</em>", safe)
     out, buf = [], []
     def _flush():
@@ -309,7 +319,7 @@ def _md_to_html(content, bullet_color=INK["frost3"]):
         mn = re.match(r"^(\d+)[.)]\s+(.*)", s)
         if mh:
             _flush()
-            out.append('<div style="font-weight:600;color:#E8EDF4;'
+            out.append('<div style="font-weight:600;color:#1F1D1A;'
                        'margin:12px 0 4px;font-size:.95em">'
                        f'{mh.group(2).rstrip(": ")}</div>')
         elif mb:
@@ -338,6 +348,20 @@ TR = {
   "en": {
     "language": "Language",
     "brand_desc": "Solidification control",
+    "mast_line": "LCWT401 deodorant stick, top-surface sink marks",
+    "m_k": "How the model reads the line",
+    "m_defect_h": "The defect",
+    "m_defect_b": ("A sink mark (ヒケ) forms when the top surface sets over a core that is still "
+                   "liquid: as the core shrinks, it pulls the skin down."),
+    "m_model_h": "The model",
+    "m_model_b": ("A physics-informed timeline follows the surface and the core through the mushy "
+                  "band, the melting point ± 5 °C, and keeps a damage index from 0 to 1. Cracks are "
+                  "expected from 0.25."),
+    "m_search_h": "The search",
+    "m_search_b": ("The optimiser tries cooling zones, air flow and, if allowed, the top reheat, and "
+                   "keeps the recipe with the lowest damage within 30 minutes."),
+    "m_credit": ("Julian Evan Chrisnanto · Lenggoro Laboratory, BASE, Tokyo University of Agriculture "
+                 "and Technology · with CBIC · 2026"),
     # Hero
     "outlook": "Top surface outlook",
     "risk_safe": "Safe", "risk_caution": "Caution",
@@ -585,12 +609,23 @@ TR = {
     "export_dpi": "Resolution", "export_bg": "Background",
     "export_w": "Width, in", "export_h": "Height, in",
     "export_dl": "Generate file", "export_ready": "Download",
-    "bg_dark": "Dark, as shown", "bg_white": "White, for journals",
+    "bg_dark": "Paper, as shown", "bg_white": "White, for journals",
     "bg_transparent": "Transparent",
   },
   "ja": {
     "language": "言語",
     "brand_desc": "固化制御",
+    "mast_line": "LCWT401 デオドラントスティック・天面のヒケ",
+    "m_k": "モデルの考え方",
+    "m_defect_h": "欠陥",
+    "m_defect_b": "ヒケは、内部がまだ液体のうちに天面が固まり、内部が収縮して表面を引き込むことで生じます。",
+    "m_model_h": "モデル",
+    "m_model_b": ("物理に基づくタイムラインが、融点±5 °Cの固液共存域を通る表面と中心の温度を追跡し、"
+                  "損傷指数を0〜1で求めます。0.25以上でクラックが予想されます。"),
+    "m_search_h": "探索",
+    "m_search_b": ("最適化は冷却ゾーン、風量、許可されれば天面の再加熱を探索し、"
+                   "30分以内で損傷が最小のレシピを残します。"),
+    "m_credit": "ジュリアン・エヴァン・クリスナント・東京農工大学大学院 生物システム応用科学府 レンゴロ研究室・CBIC 共同・2026",
     "outlook": "天面の見通し",
     "risk_safe": "安全", "risk_caution": "注意", "risk_warning": "警告", "risk_critical": "危険",
     "v_safe": "天面はきれいに仕上がる見込みです。",
@@ -814,7 +849,7 @@ TR = {
     "export_format": "形式", "export_preset": "サイズ", "export_dpi": "解像度",
     "export_bg": "背景", "export_w": "幅（インチ）", "export_h": "高さ（インチ）",
     "export_dl": "ファイルを生成", "export_ready": "ダウンロード",
-    "bg_dark": "ダーク（表示どおり）", "bg_white": "白（学術誌向け）", "bg_transparent": "透明",
+    "bg_dark": "紙色（表示どおり）", "bg_white": "白（学術誌向け）", "bg_transparent": "透明",
   },
 }
 
@@ -880,8 +915,9 @@ def _apply_export_theme(f, theme):
     if theme == "transparent":
         f.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         return f
-    if theme != "white":
-        return f                   # 'dark' — as shown
+    if theme != "white":           # "as shown" (key 'dark'): the page's paper behind the figure
+        f.update_layout(paper_bgcolor=INK["paper"], plot_bgcolor=INK["paper"])
+        return f
     f.update_layout(paper_bgcolor="white", plot_bgcolor="white",
                     font=dict(color="#1a1a1a"),
                     legend=dict(bgcolor="rgba(255,255,255,0.85)",
@@ -1221,7 +1257,7 @@ def fig_charts(ts,label=""):
     fig=make_subplots(rows=3,cols=1,shared_xaxes=True,
         subplot_titles=(t("ch_temp"),t("ch_grad"),t("ch_di")),
         vertical_spacing=0.075,row_heights=[0.46,0.22,0.32])
-    fig.update_annotations(font=dict(size=12,color=INK["frost2"],family=FONT),
+    fig.update_annotations(font=dict(size=12.5,color=INK["ink2"],family=FONT),
                            x=0,xanchor="left")
 
     # Zone boundaries (quiet), zone names only where there is room
@@ -1240,40 +1276,40 @@ def fig_charts(ts,label=""):
     # Hot air on the surface: each burst (pulsed) or the reheat window
     for a,b in spans:
         for ri in (1,2,3):
-            fig.add_vrect(x0=a,x1=b,fillcolor=_rgba(hot,0.24),line_width=0,row=ri,col=1)
+            fig.add_vrect(x0=a,x1=b,fillcolor=_rgba(hot,0.16),line_width=0,row=ri,col=1)
     if spans:
         fig.add_annotation(x=spans[0][0],xref="x",y=0.02,yref="y domain",
             text=t("ch_reheat").format(T=T_air),showarrow=False,xanchor="left",
-            yanchor="bottom",font=dict(size=10,color=_lighten_color(hot,0.3)))
+            yanchor="bottom",font=dict(size=10,color=INK["hot"]))
 
     # Mushy band (from the melting point), target and fill temperatures
     _msol,_mliq = ts.get("mushy",(T_SOL_C,T_LIQ_C))
-    fig.add_hrect(y0=_msol,y1=_mliq,fillcolor=_rgba("#F0DDAE",0.09),line_width=0,row=1,col=1)
+    fig.add_hrect(y0=_msol,y1=_mliq,fillcolor=_rgba(INK["sand"],0.85),line_width=0,row=1,col=1)
     fig.add_annotation(x=1,xref="x domain",y=_mliq,yref="y",
         text=t("ch_mushy").format(lo=_msol,hi=_mliq),showarrow=False,
-        xanchor="right",yanchor="bottom",font=dict(size=10,color="#F0DDAE"))
-    fig.add_hline(y=T_TARGET,line_dash="dot",line_color=_rgba("#5F9BD3",0.7),
+        xanchor="right",yanchor="bottom",font=dict(size=10,color=INK["umber"]))
+    fig.add_hline(y=T_TARGET,line_dash="dot",line_color=_rgba(INK["indigo"],0.7),
         line_width=1,row=1,col=1,annotation_text=t("ch_target").format(T=T_TARGET),
-        annotation_font=dict(size=10,color="#5F9BD3"),annotation_position="bottom right")
+        annotation_font=dict(size=10,color=INK["indigo"]),annotation_position="bottom right")
     fig.add_hline(y=ts["T_fill"],line_dash="dot",line_color=INK["rule2"],
         line_width=1,row=1,col=1,annotation_text=t("ch_fill").format(T=ts["T_fill"]),
         annotation_font=dict(size=10,color=INK["frost3"]),annotation_position="top right")
 
     fig.add_trace(go.Scatter(x=times,y=ts["T_surf"],name=t("tr_surface"),
-        line=dict(color=INK["frost"],width=2.6)),row=1,col=1)
+        line=dict(color=INK["ink"],width=2.4)),row=1,col=1)
     fig.add_trace(go.Scatter(x=times,y=ts["T_core"],name=t("tr_core"),
-        line=dict(color="#5F9BD3",width=2,dash="dash")),row=1,col=1)
+        line=dict(color=INK["indigo"],width=2,dash="dash")),row=1,col=1)
     fig.add_trace(go.Scatter(x=times,y=ts["T_env"],name=t("tr_air"),
         line=dict(color=INK["frost3"],width=1.3,dash="dot")),row=1,col=1)
     fig.add_trace(go.Scatter(x=times,y=ts["dT"],name=t("tr_dT"),
-        line=dict(color="#F0DDAE",width=2)),row=2,col=1)
+        line=dict(color=INK["umber"],width=2)),row=2,col=1)
     fig.add_trace(go.Scatter(x=times,y=ts["dTdt"],name=t("tr_rate"),
-        line=dict(color="#5F9BD3",width=1.6,dash="longdash")),row=2,col=1)
+        line=dict(color=INK["indigo"],width=1.6,dash="longdash")),row=2,col=1)
     fig.add_hline(y=0,line_color=INK["rule2"],line_width=1,row=2,col=1)
 
     for y0,y1,key in ((0,0.25,"SAFE"),(0.25,0.5,"CAUTION"),
                       (0.5,0.8,"WARNING"),(0.8,1.05,"CRITICAL")):
-        fig.add_hrect(y0=y0,y1=y1,fillcolor=_rgba(RISK_COL[key],0.06),
+        fig.add_hrect(y0=y0,y1=y1,fillcolor=_rgba(RISK_COL[key],0.07),
                       line_width=0,row=3,col=1)
     for th_,key in ((0.25,"CAUTION"),(0.5,"WARNING"),(0.8,"CRITICAL")):
         c=RISK_COL[key]
@@ -1281,8 +1317,8 @@ def fig_charts(ts,label=""):
             annotation_text=t("risk_"+key.lower()),annotation_font=dict(size=10,color=c),
             annotation_position="top right",row=3,col=1)
     fig.add_trace(go.Scatter(x=times,y=ts["DI"],name=t("tr_di"),
-        line=dict(color="#EEA35C",width=2.6),fill="tozeroy",
-        fillcolor=_rgba("#EEA35C",0.12)),row=3,col=1)
+        line=dict(color=INK["ink"],width=2.4),fill="tozeroy",
+        fillcolor=_rgba(INK["ink"],0.06)),row=3,col=1)
 
     if spans:
         ta_arr=np.array(times); DI_arr=np.array(ts["DI"])
@@ -1291,7 +1327,7 @@ def fig_charts(ts,label=""):
         drop=float(DI_arr[is_])-float(DI_arr[min(ie_,len(DI_arr)-1)])
         if drop>0.005:
             fig.add_annotation(x=(spans[0][0]+spans[-1][1])/2,y=float(DI_arr[ie_])+0.07,
-                text=t("ch_heal").format(d=drop),font=dict(color=_lighten_color(hot,0.3),size=11),
+                text=t("ch_heal").format(d=drop),font=dict(color=INK["hot"],size=11),
                 bgcolor=INK["deck"],bordercolor=_rgba(hot,0.6),borderwidth=1,
                 showarrow=False,xref="x3",yref="y3")
 
@@ -1300,19 +1336,19 @@ def fig_charts(ts,label=""):
     Tlo=min(ts["T_surf"]+ts["T_core"]+ts["T_env"])-5
     Thi=max(ts["T_surf"]+ts["T_core"]+ts["T_env"])+5
     dlo=min(ts["dT"]+ts["dTdt"])-3; dhi=max(ts["dT"]+ts["dTdt"])+3
-    line_c=_rgba(INK["frost"],0.7)
+    line_c=_rgba(INK["ink"],0.55)
     def _ptr(tm,Ts_f,Tc_f,dT_f,DI_f,ip):
         lc=hot if ip else line_c
-        mk=dict(line=dict(color=INK["night"],width=1.5))
+        mk=dict(line=dict(color=INK["paper"],width=1.5))
         return [
             go.Scatter(x=[tm,tm],y=[Tlo,Thi],mode="lines",line=dict(color=lc,width=1.5),
                        showlegend=False,hoverinfo="skip"),
             go.Scatter(x=[tm,tm],y=[Ts_f,Tc_f],mode="markers",
-                       marker=dict(size=10,color=[INK["frost"],"#5F9BD3"],**mk),
+                       marker=dict(size=10,color=[INK["ink"],INK["indigo"]],**mk),
                        showlegend=False,hoverinfo="skip"),
             go.Scatter(x=[tm,tm],y=[dlo,dhi],mode="lines",line=dict(color=lc,width=1.5),
                        showlegend=False,hoverinfo="skip"),
-            go.Scatter(x=[tm],y=[dT_f],mode="markers",marker=dict(size=9,color="#F0DDAE",**mk),
+            go.Scatter(x=[tm],y=[dT_f],mode="markers",marker=dict(size=9,color=INK["umber"],**mk),
                        showlegend=False,hoverinfo="skip"),
             go.Scatter(x=[tm,tm],y=[0,1.05],mode="lines",line=dict(color=lc,width=1.5),
                        showlegend=False,hoverinfo="skip"),
@@ -1351,7 +1387,7 @@ def fig_charts(ts,label=""):
     fig.update_layout(
         height=780, uirevision="charts", hovermode="x unified",
         title=dict(text=t("ch_title").format(di=DI_pk,risk=_rname(DI_pk)),x=0,
-                   xanchor="left",y=0.99,font=dict(size=14,color=INK["frost"])),
+                   xanchor="left",y=0.99,font=dict(family=SERIF,size=22,color=INK["ink"])),
         legend=dict(orientation="h",x=1,xanchor="right",y=1.04,yanchor="bottom"),
         margin=dict(l=56,r=16,t=86,b=78),
         annotations=base_ann+[_note(times[0],ts["T_surf"][0],ts["T_core"][0],
@@ -1388,8 +1424,8 @@ def fig_charts(ts,label=""):
 # ── Sidebar ────────────────────────────────────────────────────────────────
 MARK_SVG = ("<svg class='mark' viewBox='0 0 20 30' aria-hidden='true'>"
             "<defs><linearGradient id='pdm' x1='0' y1='0' x2='0' y2='1'>"
-            "<stop offset='0' stop-color='#DD6A3A'/><stop offset='.45' stop-color='#F0DDAE'/>"
-            "<stop offset='1' stop-color='#5F9BD3'/></linearGradient></defs>"
+            "<stop offset='0' stop-color='#B4532A'/><stop offset='.45' stop-color='#E6D9BF'/>"
+            "<stop offset='1' stop-color='#2E4A6E'/></linearGradient></defs>"
             "<rect x='3' y='1' width='14' height='28' rx='7' fill='url(#pdm)'/></svg>")
 
 _STEP = [0]
@@ -1786,9 +1822,17 @@ def _src_label(src):
     return t("rule_based")
 
 def _mast_html():
-    return (f"<div class='mast'><div class='mast-brand'>{MARK_SVG}<span class='wm'>PI-DRL</span>"
+    return (f"<header class='mast'><div class='mast-brand'>{MARK_SVG}<span class='wm'>PI-DRL</span>"
             f"<span class='ds'>{t('brand_desc')}</span></div>"
-            f"<div class='mast-client'>CBIC × TUAT</div></div>")
+            f"<div class='mast-meta'><span>{t('mast_line')}</span>"
+            f"<span class='mast-client'>CBIC × TUAT</span></div></header>")
+
+def _colophon_html():
+    """Below the tabs: what the model does, in three short paragraphs, and who made it."""
+    cols = "".join(f"<div><b>{t('m_' + k + '_h')}</b><p>{t('m_' + k + '_b')}</p></div>"
+                   for k in ("defect", "model", "search"))
+    return (f"<footer class='colo'><div class='colo-k'>{t('m_k')}</div><div class='colo-g'>{cols}</div>"
+            f"<div class='colo-c'><span>{t('m_credit')}</span><span>PI-DRL v4.1</span></div></footer>")
 
 @st.cache_resource(max_entries=16, show_spinner=False)
 def _charts_cached(key, _ts, label):
@@ -1920,11 +1964,11 @@ def _crack_glyph(di, seed):
                 pts.append((c + x, c + y))
             paths.append("M" + " L".join(f"{px:.1f} {py:.1f}" for px, py in pts))
     col = _rcol(di)
-    ring = RISK_COL["SAFE"] if f == 0 else "rgba(205,219,240,.22)"
+    ring = RISK_COL["SAFE"] if f == 0 else "rgba(31,29,26,.22)"
     return ("<svg class='rk-g' viewBox='0 0 34 34' aria-hidden='true'>"
-            f"<circle cx='17' cy='17' r='14' fill='#1F2A3C' stroke='{ring}' stroke-width='1.2'/>"
-            + "".join(f"<path d='{p}' fill='none' stroke='#0d0a08' stroke-width='3.2' "
-                      f"stroke-linecap='round' stroke-opacity='.75'/><path d='{p}' fill='none' "
+            f"<circle cx='17' cy='17' r='14' fill='#EFEBE3' stroke='{ring}' stroke-width='1.2'/>"
+            + "".join(f"<path d='{p}' fill='none' stroke='#1F1D1A' stroke-width='3.2' "
+                      f"stroke-linecap='round' stroke-opacity='.55'/><path d='{p}' fill='none' "
                       f"stroke='{col}' stroke-width='1.5' stroke-linecap='round'/>" for p in paths)
             + "</svg>")
 
@@ -2109,288 +2153,321 @@ def main():
 
     # ─── CSS ─────────────────────────────────────────────────────────────────
     st.markdown("""<style>
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=BIZ+UDPGothic:wght@400;700&display=swap');
-/* PI-DRL design system, "cold room": the chrome is cool and monochrome; the
-   only warm colour on screen is a real temperature. */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=BIZ+UDPGothic:wght@400;700&family=Noto+Serif+JP:wght@400;600&display=swap');
+/* PI-DRL design system, "editorial lab" (October 2026): the paper, ink and hairlines
+   of the Oddech and Lab Seminar sites. Hierarchy comes from type: Instrument Serif
+   for headlines and big figures, Inter Tight for text, JetBrains Mono for small
+   numbers. The line itself is shown at night (Line Studio). Warm hues are
+   temperatures only: one ramp, indigo for cold to terracotta for hot. */
 :root{
-  --night:#111926; --deck:#172131; --deck2:#1F2A3C;
-  --frost:#E8EDF4; --frost2:#B0BACB; --frost3:#7E8AA0;
-  --rule:rgba(205,219,240,.10); --rule2:rgba(205,219,240,.18);
-  --safe:#7CCBA6; --caution:#E9C46A; --warning:#EF9E59; --critical:#E2573C;
-  --heat:#DD6A3A; --cool:#5F9BD3;
-  --font:Archivo,"BIZ UDPGothic","Helvetica Neue",Arial,sans-serif;
+  --paper:#F7F5F0; --paper2:#EFEBE3; --paper3:#E7E1D6; --white:#FBFAF7;
+  --ink:#1F1D1A; --ink2:#4A4640; --grey:#8A847A;
+  --hair:rgba(31,29,26,.12); --hair2:rgba(31,29,26,.24);
+  --indigo:#2E4A6E; --umber:#8C6A43; --hot:#B4532A;
+  --safe:#4F8A3A; --caution:#A8761A; --warning:#C2622B; --critical:#D04A35;
+  --serif:"Instrument Serif","Noto Serif JP",Georgia,serif;
+  --sans:"Inter Tight","BIZ UDPGothic","Helvetica Neue",Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --ease:cubic-bezier(.2,.7,.1,1);
+  /* the "cold room" names, for inline styles written against them */
+  --frost:var(--ink); --frost2:var(--ink2); --frost3:var(--grey); --rule:var(--hair); --rule2:var(--hair2);
+  --deck:var(--white); --deck2:var(--paper2); --night:var(--paper); --font:var(--sans);
 }
-html,body,.stApp{color:var(--frost);font-family:var(--font)!important;
+html,body,.stApp{color:var(--ink);font-family:var(--sans)!important;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 .stApp{background:
-  url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .045 0'/></filter><rect width='180' height='180' filter='url(%23g)'/></svg>"),
-  radial-gradient(1100px 520px at 74% -12%, rgba(221,106,58,.10), transparent 62%),
-  radial-gradient(900px 640px at -6% 110%, rgba(95,155,211,.08), transparent 60%),
-  #111926!important;background-attachment:fixed!important}
-[data-testid="stHeader"]{background:linear-gradient(180deg,rgba(17,25,38,.94) 30%,rgba(17,25,38,0))!important}
+  url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .05 0'/></filter><rect width='180' height='180' filter='url(%23g)'/></svg>"),
+  #F7F5F0!important;background-attachment:fixed!important}
+[data-testid="stHeader"]{background:rgba(247,245,240,.97)!important;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 [data-testid="stDecoration"]{display:none!important}
 [data-testid="stMainBlockContainer"],.block-container{max-width:1440px!important;
-  padding:2.2rem 3rem 5rem!important}
+  padding:4.6rem 3rem 5rem!important}
 .stApp p,.stApp li,.stApp label,.stApp input,.stApp textarea,.stApp button,
-.stApp td,.stApp th{font-family:var(--font)!important}
-[data-testid="stMarkdownContainer"] p{color:var(--frost2);line-height:1.6}
-.stMarkdown h4{font-family:var(--font)!important;font-stretch:115%;font-weight:600!important;
-  font-size:1.05rem!important;color:var(--frost)!important;letter-spacing:-.005em}
-*{scrollbar-width:thin;scrollbar-color:#2a3650 transparent}
-::selection{background:rgba(232,237,244,.22)}
-:focus-visible{outline:2px solid var(--frost)!important;outline-offset:2px!important}
+.stApp td,.stApp th{font-family:var(--sans)!important}
+[data-testid="stMarkdownContainer"] p{color:var(--ink2);line-height:1.6}
+.stMarkdown h4{font-family:var(--serif)!important;font-weight:400!important;
+  font-size:1.55rem!important;color:var(--ink)!important;letter-spacing:-.005em}
+*{scrollbar-width:thin;scrollbar-color:#B9B2A6 transparent}
+::selection{background:var(--ink);color:var(--paper)}
+:focus-visible{outline:2px solid var(--ink)!important;outline-offset:2px!important}
 
-/* Sidebar */
-[data-testid="stSidebar"]{background:var(--deck)!important;border-right:1px solid var(--rule)!important}
+/* Sidebar: the recipe, as a sequence of numbered steps on warm paper */
+[data-testid="stSidebar"]{background:var(--paper2)!important;border-right:1px solid var(--hair)!important}
 [data-testid="stSidebar"] [data-testid="stSidebarContent"]{padding-top:.25rem}
-[data-testid="stSidebar"] label p{font-size:.84rem!important;color:var(--frost2)!important}
-[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p{font-size:.78rem!important;line-height:1.5}
-.sb-head{padding:.4rem 0 .9rem}
-.sb-brand,.mast-brand{display:flex;align-items:center;gap:.55rem}
-.mark{width:14px;height:21px;flex-shrink:0}
-.sb-brand .wm,.mast-brand .wm{font-stretch:125%;font-weight:700;letter-spacing:.02em;
-  color:var(--frost);font-size:.98rem}
-.sb-brand .ds,.mast-brand .ds{color:var(--frost3);font-size:.8rem}
-.sb-title{font-stretch:118%;font-weight:600;font-size:1.4rem;color:var(--frost);
-  margin:1rem 0 .15rem;letter-spacing:-.01em}
-.sb-sub{color:var(--frost3);font-size:.8rem}
-.step{display:flex;align-items:baseline;gap:.7rem;margin:1.4rem 0 .5rem;padding-top:1.05rem;
-  border-top:1px solid var(--rule)}
-.step b{color:var(--frost3);font-weight:500;font-size:.8rem;font-variant-numeric:tabular-nums;
-  min-width:.9rem}
-.step span{color:var(--frost);font-stretch:112%;font-weight:600;font-size:.98rem}
-.sb-status{margin:.9rem 0 .2rem;display:grid;gap:.4rem}
-.sb-status div{display:flex;align-items:center;gap:.55rem;color:var(--frost2);font-size:.8rem}
+[data-testid="stSidebar"] label p{font-size:.84rem!important;color:var(--ink2)!important}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p{font-size:.78rem!important;line-height:1.5;color:var(--grey)!important}
+.sb-head{padding:.3rem 0 1rem}
+.sb-brand,.mast-brand{display:flex;align-items:center;gap:.6rem}
+.mark{width:13px;height:20px;flex-shrink:0}
+.sb-title{font-family:var(--serif);font-weight:400;font-size:2.15rem;line-height:1;color:var(--ink);
+  margin:.85rem 0 .45rem;letter-spacing:-.012em}
+.sb-sub{color:var(--grey);font-size:.8rem;line-height:1.45}
+.step{display:flex;align-items:baseline;gap:.8rem;margin:1.6rem 0 .6rem;padding-top:1.1rem;
+  border-top:1px solid var(--hair)}
+.step b{font-family:var(--serif);font-weight:400;font-size:1.75rem;line-height:.7;color:var(--grey);
+  min-width:1.1rem}
+.step span{color:var(--ink);font-weight:600;font-size:1rem;letter-spacing:-.005em}
+.sb-status{margin:1rem 0 .2rem;display:grid;gap:.45rem}
+.sb-status div{display:flex;align-items:center;gap:.6rem;color:var(--ink2);font-size:.8rem}
 .sb-status i{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.drl-rep{margin-top:.9rem;padding:.85rem .9rem;background:var(--deck2);border-radius:10px}
-.drl-rep p{color:var(--frost)!important;font-size:.84rem;margin:0 0 .6rem;line-height:1.5}
-.drl-cap{color:var(--frost3);font-size:.75rem;margin-bottom:.3rem}
-.drl-rep table{width:100%;border-collapse:collapse;font-size:.8rem;font-variant-numeric:tabular-nums}
-.drl-rep td{padding:.28rem 0;color:var(--frost2);border-top:1px solid var(--rule)}
+.drl-rep{margin-top:1rem;padding:.95rem 0 .3rem;border-top:1px solid var(--hair2)}
+.drl-rep p{color:var(--ink)!important;font-size:.86rem;margin:0 0 .7rem;line-height:1.5}
+.drl-cap{color:var(--grey);font:500 .7rem/1.4 var(--mono);margin-bottom:.35rem}
+.drl-rep table{width:100%;border-collapse:collapse;font:500 .76rem var(--mono)}
+.drl-rep td{padding:.36rem 0;color:var(--ink2);border-top:1px solid var(--hair)}
 .drl-rep td+td{text-align:right}
-.drl-rep tr.cur td{color:var(--frost);font-weight:600}
+.drl-rep tr.cur td{color:var(--ink);font-weight:600}
 
-/* Buttons: ghost by default, solid frost for the one primary action */
+/* Buttons: ghost pills; solid ink for the one primary action */
 .stButton>button,.stDownloadButton>button,.stFormSubmitButton>button{
-  font-family:var(--font)!important;font-weight:550!important;
-  border-radius:999px!important;min-height:2.4rem;padding:.4rem 1.05rem!important;
-  background:transparent!important;color:var(--frost)!important;
-  border:1px solid var(--rule2)!important;box-shadow:none!important;
-  transition:background .16s ease,border-color .16s ease,color .16s ease!important}
-.stButton>button p,.stDownloadButton>button p,.stFormSubmitButton>button p{font-size:.86rem!important}
-.stButton>button:hover,.stDownloadButton>button:hover{background:var(--deck2)!important;
-  border-color:var(--frost3)!important}
+  font-family:var(--sans)!important;font-weight:500!important;
+  border-radius:999px!important;min-height:2.45rem;padding:.4rem 1.15rem!important;
+  background:transparent!important;color:var(--ink)!important;
+  border:1px solid var(--hair2)!important;box-shadow:none!important;
+  transition:background .25s var(--ease),border-color .25s var(--ease),color .25s var(--ease),transform .25s var(--ease)!important}
+.stButton>button p,.stDownloadButton>button p,.stFormSubmitButton>button p{font-size:.87rem!important;color:inherit!important}
+.stButton>button:hover,.stDownloadButton>button:hover{background:var(--white)!important;border-color:var(--ink)!important}
+.stButton>button:active{transform:scale(.98)}
 .stButton>button[kind="primary"],button[data-testid^="stBaseButton-primary"],
-.stFormSubmitButton>button{background:var(--frost)!important;color:var(--night)!important;
-  border-color:var(--frost)!important;font-weight:600!important}
+.stFormSubmitButton>button{background:var(--ink)!important;color:var(--paper)!important;
+  border-color:var(--ink)!important;font-weight:600!important;box-shadow:0 14px 30px -18px rgba(31,29,26,.75)!important}
 .stButton>button[kind="primary"] p,button[data-testid^="stBaseButton-primary"] p,
-.stFormSubmitButton>button p{color:var(--night)!important}
+.stFormSubmitButton>button p{color:var(--paper)!important}
 .stButton>button[kind="primary"]:hover,button[data-testid^="stBaseButton-primary"]:hover,
-.stFormSubmitButton>button:hover{background:#FFFFFF!important;border-color:#FFFFFF!important}
+.stFormSubmitButton>button:hover{background:#000!important;border-color:#000!important}
 
-/* Inputs */
-.stNumberInput input,.stTextInput input,.stTextArea textarea{background:var(--deck2)!important;
-  color:var(--frost)!important;font-variant-numeric:tabular-nums}
-[data-baseweb="input"],[data-baseweb="base-input"],[data-baseweb="select"]>div{
-  background:var(--deck2)!important;border-color:var(--rule)!important;border-radius:8px!important}
-.stNumberInput button{background:var(--deck2)!important;color:var(--frost2)!important;border:none!important}
-.stNumberInput button:hover{color:var(--frost)!important}
-[data-testid="stSliderThumbValue"],[data-testid="stThumbValue"]{color:var(--frost)!important;
-  font-family:var(--font)!important;font-variant-numeric:tabular-nums;background:none!important}
+/* Inputs: white wells with a hairline, numbers in mono */
+.stNumberInput input,.stTextInput input,.stTextArea textarea{background:var(--white)!important;
+  color:var(--ink)!important;font-variant-numeric:tabular-nums}
+.stNumberInput input{font-family:var(--mono)!important;font-size:.88rem!important}
+[data-baseweb="input"],[data-baseweb="base-input"],[data-baseweb="select"]>div,
+[data-testid="stNumberInputContainer"],[data-testid="stTextInputRootElement"],[data-testid="stTextAreaRootElement"]{
+  background:var(--white)!important;border-color:var(--hair2)!important;border-radius:8px!important}
+.stNumberInput button{background:var(--white)!important;color:var(--ink2)!important;border:none!important}
+.stNumberInput button:hover{color:var(--ink)!important;background:var(--paper2)!important}
+[data-testid="stSliderThumbValue"],[data-testid="stThumbValue"]{color:var(--ink)!important;
+  font-family:var(--mono)!important;font-size:.8rem!important;font-variant-numeric:tabular-nums;background:none!important}
 [data-testid="stSliderTickBarMin"],[data-testid="stSliderTickBarMax"],
-[data-testid="stTickBarMin"],[data-testid="stTickBarMax"]{color:var(--frost3)!important}
+[data-testid="stTickBarMin"],[data-testid="stTickBarMax"]{color:var(--grey)!important;font-family:var(--mono)!important;font-size:.72rem!important}
 
-/* Tabs: a floating glass bar that stays in reach while a long view scrolls */
+/* Tabs: a quiet editorial bar with a hairline, sticky while a long view scrolls */
 .stTabs{margin-top:2.6rem}
 /* Sticky needs a tall parent: Baseweb (<=1.58) wraps the list in a box of its
    own height, so the wrapper sticks there; React Aria (1.65+) has no wrapper. */
-.stTabs div:has(> [data-baseweb="tab-list"]),.stTabs [role="tablist"]{position:sticky;top:3.9rem;
-  z-index:30;width:fit-content;max-width:100%}
+.stTabs div:has(> [data-baseweb="tab-list"]),.stTabs [role="tablist"]{position:sticky;top:3.75rem;z-index:30}
 .stTabs [role="tab"]>div[data-rac]{display:none!important}
-.stTabs [role="tablist"]{gap:.2rem!important;padding:.3rem!important;overflow-x:auto;
-  background:rgba(23,33,49,.74)!important;border:1px solid var(--rule)!important;border-radius:999px!important;
-  -webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%)}
-.stTabs [role="tab"]{height:auto!important;padding:.55rem 1.25rem!important;border-radius:999px!important;
-  background:transparent!important;color:var(--frost3)!important;white-space:nowrap;
-  transition:background .2s ease,color .2s ease}
-.stTabs [role="tab"] p{font-size:.92rem!important;font-stretch:108%;font-weight:550!important;
-  color:inherit!important}
-.stTabs [role="tab"]:hover{color:var(--frost)!important;background:rgba(232,237,244,.07)!important}
-.stTabs [aria-selected="true"],.stTabs [aria-selected="true"]:hover{background:var(--frost)!important;
-  color:var(--night)!important}
+.stTabs [role="tablist"]{gap:2.2rem!important;padding:0 .1rem!important;overflow-x:auto;width:100%;
+  background:rgba(247,245,240,.93)!important;border:none!important;border-bottom:1px solid var(--hair)!important;
+  border-radius:0!important;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.stTabs [role="tab"]{height:auto!important;padding:1rem 0 .85rem!important;border-radius:0!important;
+  background:transparent!important;color:var(--grey)!important;white-space:nowrap;
+  border-bottom:2px solid transparent!important;margin-bottom:-1px!important;
+  transition:color .25s var(--ease),border-color .25s var(--ease)}
+.stTabs [role="tab"] p{font-size:1rem!important;font-weight:500!important;color:inherit!important;letter-spacing:-.005em}
+.stTabs [role="tab"]:hover{color:var(--ink)!important;background:transparent!important}
+.stTabs [aria-selected="true"],.stTabs [aria-selected="true"]:hover{color:var(--ink)!important;
+  border-bottom-color:var(--ink)!important;background:transparent!important}
 .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important}
-.stTabs [role="tabpanel"]{padding-top:1.8rem!important}
-.stTabs [role="tabpanel"]>div{animation:fadeIn .35s ease both}
+.stTabs [role="tabpanel"]{padding-top:2.4rem!important}
+.stTabs [role="tabpanel"]>div{animation:rise .6s var(--ease) both}
 
-/* Tab head: editorial headline, standfirst, the view's key figures */
-.th{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2.6rem;align-items:end;
-  margin:0 0 1.8rem;padding-bottom:1.3rem;border-bottom:1px solid var(--rule)}
-.th-h{font-stretch:120%;font-weight:600;font-size:clamp(1.55rem,2.3vw,2.15rem);line-height:1.08;
-  letter-spacing:-.016em;color:var(--frost);margin:0 0 .55rem}
+/* Tab head: a serif headline, the standfirst, and the view's key figures */
+.th{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3rem;align-items:end;
+  margin:0 0 2.2rem;padding-bottom:1.6rem;border-bottom:1px solid var(--hair)}
+.th-h{font-family:var(--serif);font-weight:400;font-size:clamp(2.2rem,3.5vw,3.4rem);line-height:1.02;
+  letter-spacing:-.014em;color:var(--ink);margin:0 0 .75rem;text-wrap:balance}
 .th .sf{margin:0}
 .th-f{display:flex;gap:2.4rem}
-.th-f div{display:flex;flex-direction:column;gap:.25rem;min-width:7rem;max-width:11rem}
-.th-f b{font-size:1.5rem;font-weight:600;font-stretch:108%;line-height:1.1;color:var(--frost);
-  font-variant-numeric:tabular-nums;white-space:nowrap}
-.th-f b small{font-size:.85rem;font-weight:500;color:var(--frost2);margin-left:.22rem}
-.th-f span{color:var(--frost3);font-size:.78rem;line-height:1.4}
+.th-f div{display:flex;flex-direction:column;gap:.4rem;min-width:7rem;max-width:12rem;
+  padding-left:1.1rem;border-left:1px solid var(--hair)}
+.th-f b{font-family:var(--serif);font-weight:400;font-size:2.55rem;line-height:.95;color:var(--ink);
+  white-space:nowrap;letter-spacing:-.01em}
+.th-f b small{font-family:var(--sans);font-size:.85rem;font-weight:500;color:var(--ink2);margin-left:.25rem;letter-spacing:0}
+.th-f span{color:var(--grey);font-size:.78rem;line-height:1.45}
 
 /* Alerts, expanders, captions, charts */
-[data-testid="stAlert"],[data-testid="stAlertContainer"]{background:var(--deck)!important;
-  border:1px solid var(--rule)!important;border-radius:10px!important;color:var(--frost2)!important}
-[data-testid="stExpander"] details{border:1px solid var(--rule)!important;border-radius:10px!important;
+[data-testid="stAlert"],[data-testid="stAlertContainer"]{background:var(--white)!important;
+  border:1px solid var(--hair)!important;border-radius:12px!important;color:var(--ink2)!important}
+[data-testid="stExpander"] details{border:1px solid var(--hair)!important;border-radius:12px!important;
   background:transparent!important}
-[data-testid="stExpander"] summary{color:var(--frost2)!important}
-[data-testid="stExpander"] summary:hover{color:var(--frost)!important}
-[data-testid="stCaptionContainer"],.stCaption{color:var(--frost3)!important}
+[data-testid="stExpander"] summary{color:var(--ink2)!important}
+[data-testid="stExpander"] summary:hover{color:var(--ink)!important}
+[data-testid="stCaptionContainer"],.stCaption{color:var(--grey)!important}
 [data-testid="stPlotlyChart"]{background:transparent!important}
+[data-testid="stPlotlyChart"] .main-svg{background:transparent!important}
+.modebar-group{background:transparent!important}
+.st-key-crack_before,.st-key-crack_after{background:var(--white);border:1px solid var(--hair);
+  border-radius:20px;padding:.4rem .7rem;overflow:hidden}
 .modebar{background:transparent!important}
-hr{border-color:var(--rule)!important}
+.modebar-btn path{fill:var(--grey)!important}
+.modebar-btn:hover path{fill:var(--ink)!important}
+hr{border-color:var(--hair)!important}
 
 /* Masthead */
-.mast{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.4rem}
-.mast-client{color:var(--frost3);font-size:.85rem}
-.sf{color:var(--frost2)!important;font-size:.98rem;line-height:1.6;max-width:72ch;margin:0 0 1.1rem}
+.mast{display:flex;justify-content:space-between;align-items:center;gap:2rem;margin:0 0 1.5rem;
+  padding-bottom:1.05rem;border-bottom:1px solid var(--hair)}
+.mast-brand{align-items:center;gap:.75rem}
+.mast-brand .wm{font-family:var(--serif);font-size:2.05rem;line-height:1;color:var(--ink);letter-spacing:-.012em}
+.mast-brand .ds{font:500 .76rem/1 var(--mono);color:var(--grey);padding-left:.75rem;border-left:1px solid var(--hair2)}
+.mast-meta{display:flex;gap:1.5rem;align-items:center;font:500 .74rem/1.3 var(--mono);color:var(--grey)}
+.mast-client{color:var(--ink);white-space:nowrap}
+.mast,.st-key-studio{animation:rise .9s var(--ease) both}.st-key-studio{animation-delay:.08s}
+.sf{color:var(--ink2)!important;font-size:1.02rem;line-height:1.62;max-width:70ch;margin:0 0 1.1rem}
 
-/* Scenario cards: the native radio, restyled; strip + peak damage per card */
-[class*='st-key-sc_pick'] [role="radiogroup"]{gap:.45rem!important;flex-direction:column}
+/* Scenario list (sidebar): the native radio, restyled as editorial rows with the
+   preset's surface-temperature strip and its peak damage index */
+[class*='st-key-sc_pick'] [role="radiogroup"]{gap:0!important;flex-direction:column;border-top:1px solid var(--hair2)}
 [class*='st-key-sc_pick'] [role="radiogroup"]>*{position:relative;display:flex!important;width:100%;
-  margin:0!important;padding:.68rem 3.1rem 1.15rem .9rem!important;border:1px solid var(--rule);
-  border-radius:12px;background:rgba(31,42,60,.32);cursor:pointer;
-  transition:border-color .16s ease,background .16s ease}
-[class*='st-key-sc_pick'] [role="radiogroup"]>*:hover{border-color:var(--rule2);background:rgba(31,42,60,.62)}
-[class*='st-key-sc_pick'] [role="radiogroup"]>*:has(input:checked){border-color:rgba(232,237,244,.5);
-  background:var(--deck2)}
+  margin:0!important;padding:.78rem 3.1rem 1.2rem .9rem!important;border:none;border-bottom:1px solid var(--hair);
+  border-radius:0;background:transparent;cursor:pointer;transition:background .25s var(--ease),box-shadow .25s var(--ease)}
+[class*='st-key-sc_pick'] [role="radiogroup"]>*:hover{background:rgba(251,250,247,.6)}
+[class*='st-key-sc_pick'] [role="radiogroup"]>*:has(input:checked){background:var(--white);box-shadow:inset 3px 0 0 var(--ink)}
 [class*='st-key-sc_pick'] [role="radiogroup"]>*::before{content:"";position:absolute;left:.9rem;right:.9rem;
-  bottom:.55rem;height:3px;border-radius:2px;background:var(--strip);opacity:.9}
-[class*='st-key-sc_pick'] [role="radiogroup"]>*::after{position:absolute;top:.7rem;right:.85rem;
-  font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums}
+  bottom:.6rem;height:3px;border-radius:2px;background:var(--strip);opacity:.95}
+[class*='st-key-sc_pick'] [role="radiogroup"]>*::after{position:absolute;top:.8rem;right:.9rem;
+  font:600 .74rem var(--mono)}
 [class*='st-key-sc_pick'] label[data-baseweb="radio"]>div:first-of-type,
 [class*='st-key-sc_pick'] [data-testid="stRadioOption"]>div>div:first-child:not([data-testid]){display:none}
 [class*='st-key-sc_pick'] [data-testid="stRadioOption"]{width:100%;cursor:pointer}
 [class*='st-key-sc_pick'] [data-testid="stRadioCaption"]{padding-left:0!important;margin-left:0!important}
-[class*='st-key-sc_pick'] [role="radiogroup"]>* p{font-size:.86rem!important;font-weight:550;
-  color:var(--frost2)!important;line-height:1.35}
-[class*='st-key-sc_pick'] [role="radiogroup"]>*:has(input:checked) p{color:var(--frost)!important}
+[class*='st-key-sc_pick'] [role="radiogroup"]>* p{font-size:.88rem!important;font-weight:600;
+  color:var(--ink2)!important;line-height:1.35}
+[class*='st-key-sc_pick'] [role="radiogroup"]>*:has(input:checked) p{color:var(--ink)!important}
 [class*='st-key-sc_pick'] [role="radiogroup"]>*:not(:has(input:checked)) [data-testid="stCaptionContainer"]{display:none}
-[class*='st-key-sc_pick'] [data-testid="stCaptionContainer"] p{font-size:.76rem!important;font-weight:400;
-  color:var(--frost3)!important;margin-top:.3rem}
+[class*='st-key-sc_pick'] [data-testid="stCaptionContainer"] p{font-size:.77rem!important;font-weight:400;
+  color:var(--grey)!important;margin-top:.3rem}
+[class*='st-key-sc_pick'] [role="radiogroup"]>* [data-testid="stMarkdownContainer"] p::before{
+  display:block;font-size:.68rem;font-weight:600;margin-bottom:.15rem}
 
 /* Surface integrity note */
-.note{display:flex;gap:.6rem 1.2rem;align-items:baseline;flex-wrap:wrap;padding:.9rem 0 .2rem;
-  border-top:1px solid var(--rule);color:var(--frost2);font-size:.92rem}
-.note b{color:var(--frost);font-weight:600}
+.note{display:flex;gap:.6rem 1.4rem;align-items:baseline;flex-wrap:wrap;padding:1.1rem 0 .3rem;
+  margin-top:1.2rem;border-top:1px solid var(--hair);color:var(--ink2);font-size:.95rem}
+.note b{font-family:var(--serif);font-weight:400;font-size:1.5rem;color:var(--ink)}
 .note .ok{color:var(--safe);font-weight:600}
 
-/* Report */
-.rp-rec{padding:0 0 .2rem 1.1rem;border-left:2px solid var(--risk,var(--frost3));margin-bottom:2.2rem}
-.rp-rec p{color:var(--frost)!important;font-size:1.12rem;line-height:1.6;max-width:70ch;margin:.4rem 0 0}
-.rp-k{color:var(--frost3);font-size:.82rem;margin-bottom:.6rem}
-.rp-k span{color:var(--frost2);font-variant-numeric:tabular-nums;margin-left:.4rem}
-.rp-gap{margin-top:1.8rem}
+/* Report: the recommendation as a pull quote, then checks, recipe and reheat */
+.rp-rec{padding:.2rem 0 .35rem 1.5rem;border-left:3px solid var(--risk,var(--grey));margin-bottom:2.8rem}
+.rp-rec p{font-family:var(--serif)!important;color:var(--ink)!important;font-size:clamp(1.55rem,2.3vw,2.15rem);
+  line-height:1.22;max-width:42ch;margin:.55rem 0 0;letter-spacing:-.006em}
+.rp-k{color:var(--grey);font:500 .74rem/1.4 var(--mono);margin-bottom:.75rem}
+.rp-k span{color:var(--ink2);margin-left:.4rem}
+.rp-gap{margin-top:2rem}
 .rp-checks{list-style:none;margin:0;padding:0}
-.rp-checks li{display:grid;grid-template-columns:1.3rem 1fr auto;gap:.5rem;align-items:baseline;
-  padding:.62rem 0;border-top:1px solid var(--rule);color:var(--frost2);font-size:.92rem}
+.rp-checks li{display:grid;grid-template-columns:1.4rem 1fr auto;gap:.55rem;align-items:baseline;
+  padding:.72rem 0;border-top:1px solid var(--hair);color:var(--ink2);font-size:.94rem}
+.rp-checks li:last-child{border-bottom:1px solid var(--hair)}
 .rp-checks li i{font-style:normal;font-weight:700}
 .rp-checks li.ok i{color:var(--safe)}
 .rp-checks li.no i{color:var(--critical)}
-.rp-checks li b{color:var(--frost);font-weight:550;font-variant-numeric:tabular-nums}
-.rp-table{width:100%;border-collapse:collapse;font-size:.88rem;font-variant-numeric:tabular-nums}
-.rp-table th{text-align:left;color:var(--frost3);font-weight:500;padding:.4rem .6rem .5rem 0;
-  border-bottom:1px solid var(--rule2)}
-.rp-table td{padding:.55rem .6rem .55rem 0;border-bottom:1px solid var(--rule);color:var(--frost2)}
-.rp-table td:first-child{color:var(--frost)}
-.rp-table td i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:.55rem}
-.rp-dl{display:grid;grid-template-columns:max-content 1fr;gap:.45rem 1.4rem;margin:0;font-size:.9rem}
-.rp-dl dt{color:var(--frost3)}
-.rp-dl dd{margin:0;color:var(--frost)}
-.rp-muted{color:var(--frost3)!important}
+.rp-checks li b{color:var(--ink);font:500 .86rem var(--mono)}
+.rp-table{width:100%;border-collapse:collapse;font-size:.9rem}
+.rp-table,.rp-table th,.rp-table td{border-left:none!important;border-right:none!important;background:transparent!important}
+.rp-table th,.rp-table td{border-top:none!important}
+.rp-table th{text-align:left;color:var(--grey);font:500 .72rem var(--mono);padding:.4rem .6rem .55rem 0;
+  border-bottom:1px solid var(--hair2)}
+.rp-table td{padding:.62rem .6rem .62rem 0;border-bottom:1px solid var(--hair);color:var(--ink2);font-variant-numeric:tabular-nums}
+.rp-table td:first-child{color:var(--ink);font-weight:500}
+.rp-table td i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.6rem}
+.rp-dl{display:grid;grid-template-columns:max-content 1fr;gap:.55rem 1.6rem;margin:0;font-size:.92rem}
+.rp-dl dt{color:var(--grey)}
+.rp-dl dd{margin:0;color:var(--ink)}
+.rp-muted{color:var(--grey)!important}
 
-/* Cases: worst case to best option, with the reason and the optimiser's result */
-[class*='st-key-sc_pick'] [role="radiogroup"]>* [data-testid="stMarkdownContainer"] p::before{
-  display:block;font-size:.66rem;font-weight:650;margin-bottom:.12rem}
+/* Cases: worst case to best option, as editorial columns */
 .rk-g{width:2.3rem;height:2.3rem;display:block}
-.cs-scope{color:var(--frost3)!important;font-size:.84rem!important;margin:0!important}
-.cs-cat{padding:.4rem 0 .65rem;border-bottom:2px solid currentColor;margin:1rem 0 .8rem}
-.cs-cat b{display:block;font-stretch:115%;font-weight:600;font-size:1.04rem}
-.cs-cat span{display:block;color:var(--frost3);font-size:.76rem;margin-top:.15rem}
+.cs-scope{color:var(--grey)!important;font-size:.85rem!important;margin:0!important}
+.cs-cat{padding:.2rem 0 .75rem;border-bottom:2px solid currentColor;margin:.8rem 0 .1rem}
+.cs-cat b{display:block;font-family:var(--serif);font-weight:400;font-size:1.65rem;line-height:1.05}
+.cs-cat span{display:block;color:var(--grey);font-size:.77rem;margin-top:.3rem}
 .cs-cat.worst{color:var(--critical)}.cs-cat.work{color:var(--caution)}
 .cs-cat.good,.cs-cat.best{color:var(--safe)}
-.case{display:grid;grid-template-columns:2.3rem minmax(0,1fr);gap:.2rem .8rem;align-items:center;
-  padding:.85rem .9rem .8rem;border:1px solid var(--rule);border-radius:12px;background:rgba(31,42,60,.32)}
-.cs-main b{display:block;color:var(--frost);font-weight:600;font-size:.9rem;line-height:1.3}
-.cs-main span{color:var(--frost3);font-size:.78rem}
-.cs-main strong{font-weight:650;font-variant-numeric:tabular-nums;margin-right:.45rem}
-.cs-why{grid-column:1/-1;color:var(--frost2)!important;font-size:.8rem!important;line-height:1.5!important;
-  margin:.5rem 0 0!important}
-.cs-opt{grid-column:1/-1;display:flex;align-items:baseline;gap:.4rem;flex-wrap:wrap;margin-top:.55rem;
-  padding-top:.55rem;border-top:1px solid var(--rule);font-size:.8rem;color:var(--frost3);
-  font-variant-numeric:tabular-nums}
-.cs-opt b{font-weight:650}
+.case{display:grid;grid-template-columns:2.3rem minmax(0,1fr);gap:.2rem .85rem;align-items:center;
+  padding:1.05rem 0 .95rem;border:none;border-bottom:1px solid var(--hair);border-radius:0;background:transparent}
+.cs-main b{display:block;color:var(--ink);font-weight:600;font-size:.94rem;line-height:1.3}
+.cs-main span{color:var(--grey);font:500 .74rem var(--mono)}
+.cs-main strong{font-weight:600;margin-right:.45rem}
+.cs-why{grid-column:1/-1;color:var(--ink2)!important;font-size:.85rem!important;line-height:1.55!important;
+  margin:.6rem 0 0!important}
+.cs-opt{grid-column:1/-1;display:flex;align-items:baseline;gap:.45rem;flex-wrap:wrap;margin-top:.6rem;
+  padding-top:.6rem;border-top:1px dashed var(--hair2);font:500 .76rem var(--mono);color:var(--grey)}
+.cs-opt b{font-weight:600}
 .cs-opt i{font-style:normal}
-.cs-opt em{font-style:normal;flex-basis:100%;font-size:.76rem}
-.cs-note{grid-column:1/-1;color:var(--caution)!important;font-size:.76rem!important;line-height:1.45!important;
+.cs-opt em{font-style:normal;flex-basis:100%;font-size:.74rem}
+.cs-note{grid-column:1/-1;color:var(--caution)!important;font-size:.78rem!important;line-height:1.45!important;
   margin:.35rem 0 0!important}
-.cs-none{color:var(--frost3)!important;font-size:.82rem!important}
+.cs-none{color:var(--grey)!important;font-size:.84rem!important;font-style:italic}
 [class*='st-key-cl_'] button,[class*='st-key-co_'] button,[class*='st-key-ca_'] button{
-  min-height:1.95rem!important;padding:.2rem .6rem!important}
+  min-height:2rem!important;padding:.2rem .65rem!important}
 [class*='st-key-cl_'] button p,[class*='st-key-co_'] button p,[class*='st-key-ca_'] button p{
   font-size:.78rem!important}
 
 /* Remove-row buttons in the sidebar: a compact square, not a pill */
 [class*='st-key-del_'] button,[class*='st-key-bx_'] button{min-height:2.5rem!important;min-width:0!important;
-  width:100%!important;padding:0!important;border-radius:10px!important}
+  width:100%!important;padding:0!important;border-radius:8px!important}
 [class*='st-key-del_'] button p,[class*='st-key-bx_'] button p{font-size:1.15rem!important;line-height:1!important}
 
 /* Advisor */
-.status{display:inline-flex;align-items:center;gap:.5rem;color:var(--frost2);font-size:.84rem;
-  margin-bottom:.4rem}
-.status i{width:7px;height:7px;border-radius:50%;background:var(--frost3)}
-.status i.on{background:var(--safe)}
-.h-sec{font-stretch:115%;font-weight:600;font-size:1.12rem;color:var(--frost);margin:2rem 0 .3rem}
-.src{color:var(--frost3);font-size:.76rem;margin:.2rem 0 .9rem}
+.status{display:inline-flex;align-items:center;gap:.55rem;color:var(--ink2);font-size:.86rem;margin-bottom:.4rem}
+.status i{width:7px;height:7px;border-radius:50%;background:var(--grey)}
+.status i.on{background:var(--safe);box-shadow:0 0 0 4px rgba(79,138,58,.16)}
+.h-sec{font-family:var(--serif);font-weight:400;font-size:1.75rem;line-height:1.1;color:var(--ink);margin:2.2rem 0 .45rem}
+.src{color:var(--grey);font:500 .72rem/1.4 var(--mono);margin:.25rem 0 .9rem}
 .analysis{max-width:78ch}
-.an-h{color:var(--frost);font-weight:600;font-size:.95rem;margin:1.1rem 0 .3rem}
-.an-b{color:var(--frost2);font-size:.95rem;line-height:1.7}
-.thread{max-height:520px;overflow-y:auto;padding:.2rem .4rem .2rem 0;margin:.6rem 0 1rem}
-.msg{margin:1.1rem 0}
+.an-h{color:var(--ink);font-weight:600;font-size:.96rem;margin:1.2rem 0 .3rem}
+.an-b{color:var(--ink2);font-size:.96rem;line-height:1.72}
+.thread{max-height:560px;overflow-y:auto;padding:.2rem .5rem .2rem 0;margin:.6rem 0 1rem}
+.msg{margin:1.15rem 0;animation:rise .45s var(--ease) both}
 .msg-u{display:flex;justify-content:flex-end}
-.msg-u>div{max-width:72%;background:var(--deck2);color:var(--frost);padding:.7rem 1rem;
-  border-radius:16px 16px 4px 16px;font-size:.93rem;line-height:1.6}
-.msg-a{max-width:82%;padding-left:1rem;border-left:1px solid var(--rule2)}
-.msg-a .who{display:flex;align-items:center;gap:.45rem;color:var(--frost3);font-size:.76rem;
-  margin-bottom:.3rem}
+.msg-u>div{max-width:72%;background:var(--white);border:1px solid var(--hair);color:var(--ink);padding:.75rem 1.05rem;
+  border-radius:18px 18px 4px 18px;font-size:.94rem;line-height:1.6}
+.msg-a{max-width:82%;padding-left:1.1rem;border-left:2px solid var(--ink)}
+.msg-a .who{display:flex;align-items:center;gap:.5rem;color:var(--grey);font:500 .72rem var(--mono);margin-bottom:.35rem}
 .msg-a .who .mark{width:9px;height:14px}
-.msg-a .body{color:var(--frost2);font-size:.94rem;line-height:1.7}
-.msg-a .src{margin:.45rem 0 0}
-.caret{display:inline-block;width:.45rem;height:1em;background:var(--frost2);vertical-align:-2px;
+.msg-a .body{color:var(--ink2);font-size:.95rem;line-height:1.72}
+.msg-a .src{margin:.5rem 0 0}
+.caret{display:inline-block;width:.45rem;height:1em;background:var(--ink);vertical-align:-2px;
   margin-left:2px;animation:blink 1s steps(2) infinite}
 .typing{display:inline-flex;gap:5px;padding:.4rem 0}
-.typing i{width:6px;height:6px;border-radius:50%;background:var(--frost2);animation:typing 1.2s infinite}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--ink2);animation:typing 1.2s infinite}
 .typing i:nth-child(2){animation-delay:.15s}
 .typing i:nth-child(3){animation-delay:.3s}
-.empty{color:var(--frost3);font-size:.9rem;padding:1.2rem 0;border-top:1px solid var(--rule);
-  border-bottom:1px solid var(--rule);margin:.6rem 0 1rem}
-.fu-k{color:var(--frost3);font-size:.8rem;margin:.2rem 0 .4rem}
-.mem{color:var(--frost3);font-size:.78rem;padding-top:.55rem}
+.empty{color:var(--grey);font-family:var(--serif);font-size:1.45rem;line-height:1.3;padding:1.6rem 0;
+  border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);margin:.6rem 0 1rem}
+.fu-k{color:var(--grey);font:500 .72rem var(--mono);margin:.3rem 0 .45rem}
+.mem{color:var(--grey);font:500 .72rem var(--mono);padding-top:.6rem}
+
+/* Colophon: what the model does, in three short paragraphs, and who made it */
+.colo{margin:5.5rem 0 0;padding-top:2.2rem;border-top:1px solid var(--hair2)}
+.colo-k{font:500 .76rem var(--mono);color:var(--grey);margin-bottom:1.6rem}
+.colo-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2.8rem}
+.colo-g div{border-top:1px solid var(--hair);padding-top:1.1rem}
+.colo-g b{display:block;font-family:var(--serif);font-weight:400;font-size:1.65rem;line-height:1.1;color:var(--ink);margin-bottom:.55rem}
+.colo-g p{color:var(--ink2);font-size:.92rem;line-height:1.65;margin:0;max-width:44ch}
+.colo-c{margin-top:2.8rem;display:flex;justify-content:space-between;gap:1rem 2rem;flex-wrap:wrap;
+  color:var(--grey);font:500 .72rem/1.6 var(--mono)}
 
 @keyframes blink{50%{opacity:0}}
 @keyframes typing{0%,60%,100%{opacity:.25;transform:none}30%{opacity:1;transform:translateY(-3px)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes pulseGlow{0%,100%{opacity:1}50%{opacity:.5}}
 @keyframes typingBounce{0%,60%,100%{opacity:.4}30%{opacity:1}}
 
 @media (max-width:900px){
-  [data-testid="stMainBlockContainer"],.block-container{padding:1.2rem 1rem 4rem!important}
-  .mast{margin-bottom:1.6rem}
-  .th{grid-template-columns:1fr;gap:1.1rem}
-  .th-f{gap:1.4rem;flex-wrap:wrap}
+  [data-testid="stMainBlockContainer"],.block-container{padding:4.2rem 1rem 4rem!important}
+  .mast{margin-bottom:1.2rem;flex-wrap:wrap;gap:.6rem}
+  .mast-meta{gap:1rem}
+  .mast-meta span:first-child{display:none}
+  .th{grid-template-columns:1fr;gap:1.2rem}
+  .th-f{gap:1.2rem;flex-wrap:wrap}
+  .th-f b{font-size:2rem}
   .stTabs div:has(> [data-baseweb="tab-list"]),.stTabs [role="tablist"]{top:3.4rem}
-  .stTabs [role="tab"]{padding:.5rem .9rem!important}
+  .stTabs [role="tablist"]{gap:1.4rem!important}
   .msg-u>div,.msg-a{max-width:100%}
+  .colo-g{grid-template-columns:1fr;gap:1.4rem}
 }
 @media (prefers-reduced-motion:reduce){
-  .caret,.typing i,.stTabs [role="tabpanel"]>div{animation:none!important}
+  .caret,.typing i,.msg,.mast,.st-key-studio,.stTabs [role="tabpanel"]>div{animation:none!important}
 }
 </style>""", unsafe_allow_html=True)
 
@@ -2445,6 +2522,9 @@ hr{border-color:var(--rule)!important}
     tab1,tab2,tab3,tab4,tab5 = st.tabs([
         t("tab_cases"), t("tab_temp"), t("tab_crack"), t("tab_results"), t("tab_advisor"),
     ])
+    # The colophon goes in a container made right after the tabs, so it sits
+    # below them even though the advisor tab returns early for visitors.
+    st.container().markdown(_colophon_html(), unsafe_allow_html=True)
     with tab1:
         _cases_tab(ats)
     _cfg3d = {"displayModeBar":True,"displaylogo":False,"scrollZoom":True,
@@ -2560,7 +2640,7 @@ hr{border-color:var(--rule)!important}
             f3.update_layout(height=480,showlegend=False,uirevision="crack",
                 title=dict(text=(f"{ttl}<br><span style='font-size:12px;color:{_rcol(DI_v)}'>"
                                  f"{_rname(DI_v)}, {t('di_short')} {DI_v:.3f}</span>"),
-                           x=0,xanchor="left",y=0.97,font=dict(size=14,color=INK["frost"])),
+                           x=0,xanchor="left",y=0.97,font=dict(family=SERIF,size=21,color=INK["ink"])),
                 margin=dict(l=0,r=0,t=64,b=0),
                 scene=dict(uirevision="crack",xaxis=dict(visible=False),
                            yaxis=dict(visible=False),zaxis=dict(visible=False),

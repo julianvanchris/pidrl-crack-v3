@@ -6,16 +6,19 @@
 <title>Line studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=BIZ+UDPGothic:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=BIZ+UDPGothic:wght@400;700&family=Noto+Serif+JP:wght@400&display=swap">
 <style>
 /* Line studio: the verdict, the instruments and the production line in one
-   stage. "Cold room" tokens: the only warm colours are real temperatures. */
+   stage, at night: the warm black of the editorial sites. The only warm colours
+   are still real temperatures. */
 :root{
-  --night:#111926; --deck:#172131; --deck2:#1F2A3C;
-  --frost:#E8EDF4; --frost2:#B0BACB; --frost3:#7E8AA0;
-  --rule:rgba(205,219,240,.10); --rule2:rgba(205,219,240,.18);
-  --glass:rgba(12,18,27,.74); --hot:#DD6A3A;
-  --font:Archivo,"BIZ UDPGothic","Helvetica Neue",Arial,sans-serif;
+  --night:#0F0E0C; --deck:#171512; --deck2:#221F1B;
+  --frost:#EDE8DF; --frost2:#C9C1B4; --frost3:#9C958A;
+  --rule:rgba(237,232,223,.10); --rule2:rgba(237,232,223,.18);
+  --glass:rgba(15,14,12,.74); --hot:#C8622F;
+  --font:"Inter Tight","BIZ UDPGothic","Helvetica Neue",Arial,sans-serif;
+  --serif:"Instrument Serif","Noto Serif JP",Georgia,serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:transparent;color:var(--frost);font-family:var(--font);
@@ -24,9 +27,9 @@ button{font:inherit;color:inherit}
 
 .stage{position:relative;height:var(--h,720px);border-radius:22px;overflow:hidden;isolation:isolate;
   user-select:none;-webkit-user-select:none;
-  background:radial-gradient(58% 68% at 68% 46%,rgba(95,155,211,.12),transparent 72%),
-             radial-gradient(130% 120% at 62% 0%,#1A2537 0%,#121A27 56%,#0B1119 100%);
-  box-shadow:inset 0 0 0 1px rgba(205,219,240,.08)}
+  background:radial-gradient(58% 68% at 68% 46%,rgba(200,98,47,.09),transparent 72%),
+             radial-gradient(130% 120% at 62% 0%,#1D1A16 0%,#13110F 56%,#0A0908 100%);
+  box-shadow:inset 0 0 0 1px rgba(237,232,223,.08)}
 .scene{position:absolute;inset:0}
 canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;
   cursor:grab;outline:none}
@@ -34,15 +37,15 @@ canvas.grabbing{cursor:grabbing}
 canvas.hand{cursor:pointer}
 /* Scrim behind the verdict so the type stays legible over the scene */
 .scrim{position:absolute;inset:0;z-index:2;pointer-events:none;
-  background:linear-gradient(90deg,rgba(11,17,25,.95) 0%,rgba(11,17,25,.82) 23%,rgba(11,17,25,.32) 39%,rgba(11,17,25,0) 50%)}
+  background:linear-gradient(90deg,rgba(13,12,10,.95) 0%,rgba(13,12,10,.82) 23%,rgba(13,12,10,.32) 39%,rgba(13,12,10,0) 50%)}
 .labels{position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden}
 .lbl{position:absolute;left:0;top:0;white-space:nowrap;font-size:11px;line-height:1.3;visibility:hidden;
   color:var(--frost2);text-align:center;will-change:transform;
-  text-shadow:0 1px 2px rgba(8,12,18,.95),0 0 10px rgba(8,12,18,.85)}
+  text-shadow:0 1px 2px rgba(10,9,7,.95),0 0 10px rgba(10,9,7,.85)}
 .lbl b{display:block;color:var(--frost);font-weight:600;font-size:12px;font-variant-numeric:tabular-nums}
-.lbl.zone{padding-bottom:6px;border-bottom:1px solid rgba(205,219,240,.28)}
+.lbl.zone{padding-bottom:6px;border-bottom:1px solid rgba(237,232,223,.28)}
 .lbl.burst{color:var(--frost);font-size:11.5px;padding:4px 9px;border-radius:7px;text-shadow:none;
-  background:rgba(12,18,27,.85);border:1px solid rgba(221,106,58,.55)}
+  background:rgba(15,14,12,.85);border:1px solid rgba(200,98,47,.6)}
 .lbl[hidden]{display:none}
 .fallback{position:absolute;inset:0;display:grid;place-items:center;padding:0 24px;text-align:center;
   color:var(--frost3);font-size:13px;z-index:1}
@@ -54,12 +57,11 @@ canvas.hand{cursor:pointer}
   -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);will-change:transform}
 .p-k{color:var(--frost3);font-size:11px}
 .p-t{display:flex;align-items:baseline;gap:5px;margin:1px 0 8px}
-.p-t b{font-size:26px;font-weight:600;font-stretch:118%;line-height:1;letter-spacing:-.02em;
-  font-variant-numeric:tabular-nums}
+.p-t b{font-family:var(--serif);font-size:32px;font-weight:400;line-height:.95;letter-spacing:-.01em}
 .p-t span{color:var(--frost3);font-size:12px}
 .p-g{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0;font-size:12px}
 .p-g dt{color:var(--frost3)}
-.p-g dd{margin:0;text-align:right;color:var(--frost);font-variant-numeric:tabular-nums;white-space:nowrap}
+.p-g dd{margin:0;text-align:right;color:var(--frost);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .p-g dd i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
 .p-g dd small{color:var(--frost3);font-size:10.5px;margin-left:5px}
 .p-s{display:flex;align-items:center;gap:7px;margin-top:9px;padding-top:7px;border-top:1px solid var(--rule);
@@ -85,7 +87,7 @@ canvas.hand{cursor:pointer}
 .cases button i{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .cases button b{font-weight:650;font-variant-numeric:tabular-nums}
 .cmp[hidden]{display:none}
-.scale{display:flex;align-items:center;gap:7px;color:var(--frost3);font-size:11px;font-variant-numeric:tabular-nums}
+.scale{display:flex;align-items:center;gap:7px;color:var(--frost3);font:500 10.5px var(--mono)}
 .scale i{width:96px;height:5px;border-radius:3px}
 
 /* Verdict, editorial, over the scrim */
@@ -94,8 +96,8 @@ canvas.hand{cursor:pointer}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px 3px;border:1px solid currentColor;
   border-radius:999px;font-size:12px;font-weight:600}
 .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.verdict{font-stretch:120%;font-weight:600;font-size:clamp(30px,3.7vw,56px);line-height:1.03;
-  letter-spacing:-.02em;color:var(--frost);margin:12px 0 14px;text-wrap:balance}
+.verdict{font-family:var(--serif);font-weight:400;font-size:clamp(34px,4.3vw,66px);line-height:.98;
+  letter-spacing:-.014em;color:var(--frost);margin:14px 0 16px;text-wrap:balance}
 .vsub{color:var(--frost2);font-size:15px;line-height:1.6;margin:0;max-width:46ch}
 .vsub span{color:var(--frost3)}
 .live{color:var(--frost3);font-size:12.5px;margin:12px 0 0}
@@ -107,29 +109,29 @@ canvas.hand{cursor:pointer}
 
 /* Bottom: one instrument strip, then the timeline */
 .bottom{position:absolute;left:0;right:0;bottom:0;z-index:5;padding:64px 22px 14px;
-  background:linear-gradient(180deg,transparent,rgba(11,17,25,.8) 34%,rgba(11,17,25,.95))}
+  background:linear-gradient(180deg,transparent,rgba(13,12,10,.8) 34%,rgba(13,12,10,.95))}
 .strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:12px;padding-top:10px;
   border-top:1px solid var(--rule)}
 .ro{padding:0 14px;border-left:1px solid var(--rule);min-width:0}
 .ro:first-child{border-left:none;padding-left:0}
 .ro span{display:block;color:var(--frost3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ro b{display:block;font-size:clamp(16px,1.55vw,22px);font-weight:600;font-stretch:108%;font-variant-numeric:tabular-nums;
-  line-height:1.15;margin:3px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ro b small{font-size:12px;font-weight:500;color:var(--frost2);margin-left:3px}
+.ro b{display:block;font-family:var(--serif);font-size:clamp(21px,2.05vw,30px);font-weight:400;letter-spacing:-.005em;
+  line-height:1.05;margin:4px 0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ro b small{font-family:var(--font);font-size:12px;font-weight:500;color:var(--frost2);margin-left:3px;letter-spacing:0}
 .ro em{display:block;font-style:normal;color:var(--frost3);font-size:11.5px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 .dock{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:18px;align-items:center}
 .play{width:42px;height:42px;border-radius:50%;border:1px solid var(--rule2);
-  background:rgba(232,237,244,.06);display:grid;place-items:center;cursor:pointer;transition:background .16s}
-.play:hover{background:rgba(232,237,244,.14)}
+  background:rgba(237,232,223,.06);display:grid;place-items:center;cursor:pointer;transition:background .16s}
+.play:hover{background:rgba(237,232,223,.14)}
 .play svg{width:14px;height:14px;fill:var(--frost)}
 .track{position:relative;height:92px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer}
 .tk-b{position:absolute;left:0;right:0;top:0;height:16px}
 .bk{position:absolute;top:4px;height:8px;border-radius:3px;background:var(--hot);
-  box-shadow:0 0 10px rgba(221,106,58,.55)}
+  box-shadow:0 0 10px rgba(200,98,47,.55)}
 .bk.ed{top:0;height:16px;cursor:grab;outline:none}
-.bk.ed:hover,.bk.ed:focus-visible{box-shadow:0 0 0 1.5px var(--frost),0 0 12px rgba(221,106,58,.7)}
-.bk.sel{box-shadow:0 0 0 2px var(--frost),0 0 14px rgba(221,106,58,.8)}
+.bk.ed:hover,.bk.ed:focus-visible{box-shadow:0 0 0 1.5px var(--frost),0 0 12px rgba(200,98,47,.7)}
+.bk.sel{box-shadow:0 0 0 2px var(--frost),0 0 14px rgba(200,98,47,.8)}
 /* Resize grip sits just outside the right edge, so a short burst can still be moved */
 .bk .rz{position:absolute;left:100%;top:1px;bottom:1px;width:9px;margin-left:2px;cursor:ew-resize;
   border-radius:2px;opacity:0;transition:opacity .15s}
@@ -145,25 +147,25 @@ canvas.hand{cursor:pointer}
 .tk-z{position:absolute;left:0;right:0;top:69px;height:23px}
 .tk-z div{position:absolute;top:0;height:100%;padding-left:6px;border-left:1px solid var(--rule2);
   overflow:hidden;white-space:nowrap;font-size:10.5px;line-height:11.5px;color:var(--frost3)}
-.tk-z b{display:block;color:var(--frost2);font-weight:550;font-size:11px;font-variant-numeric:tabular-nums}
+.tk-z b{display:block;color:var(--frost2);font:500 10.5px var(--mono)}
 .tk-h{position:absolute;top:-4px;height:73px;width:0;outline:none;pointer-events:none}
 .tk-h::before{content:"";position:absolute;left:-1px;top:0;bottom:0;width:2px;border-radius:1px;background:var(--frost)}
 .tk-h i{position:absolute;left:-8px;top:49px;width:16px;height:16px;border-radius:50%;background:var(--frost);
-  box-shadow:0 0 0 4px rgba(232,237,244,.16),0 2px 10px rgba(0,0,0,.4)}
-.tk-h:focus-visible i{box-shadow:0 0 0 5px rgba(232,237,244,.45)}
+  box-shadow:0 0 0 4px rgba(237,232,223,.16),0 2px 10px rgba(0,0,0,.4)}
+.tk-h:focus-visible i{box-shadow:0 0 0 5px rgba(237,232,223,.45)}
 .dock-r{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
 .add{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--rule2);background:transparent;
   color:var(--frost);border-radius:999px;padding:8px 14px 8px 11px;font-size:12.5px;font-weight:550;
   cursor:pointer;white-space:nowrap;transition:background .16s,border-color .16s}
-.add:hover{background:rgba(232,237,244,.1);border-color:var(--frost3)}
+.add:hover{background:rgba(237,232,223,.1);border-color:var(--frost3)}
 .add:disabled{opacity:.4;cursor:default}
 .add svg{width:12px;height:12px;stroke:var(--frost);stroke-width:2;fill:none}
 .add[hidden]{display:none}
-.tot{color:var(--frost3);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tot{color:var(--frost3);font:500 11px var(--mono);white-space:nowrap}
 .stage.busy .bottom::before{content:"";position:absolute;left:22px;right:22px;top:52px;height:1px;
   background:linear-gradient(90deg,transparent,var(--frost),transparent) no-repeat;
   background-size:40% 100%;animation:scan 1s linear infinite}
-.hint{margin:10px 2px 0;color:var(--frost3);font-size:12px;line-height:1.5}
+.hint{margin:12px 2px 0;color:#8A847A;font-size:12.5px;line-height:1.55}
 :focus-visible{outline:2px solid var(--frost);outline-offset:2px}
 @keyframes pour{from{clip-path:inset(0 100% 0 0 round 6px)}to{clip-path:inset(0 0 0 0 round 6px)}}
 @keyframes scan{from{background-position:-40% 0}to{background-position:140% 0}}
@@ -443,7 +445,7 @@ function drawTrack() {
   $("dl").innerHTML = `<svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">` +
     `<defs><linearGradient id="dg" x1="0" x2="1" y1="0" y2="0">${gs.join("")}</linearGradient></defs>` +
     `<path d="${p} L1000 100 Z" fill="url(#dg)" fill-opacity=".85"/>` +
-    `<path d="M0 ${th} H1000" stroke="rgba(232,237,244,.6)" stroke-width="1" stroke-dasharray="5 5" ` +
+    `<path d="M0 ${th} H1000" stroke="rgba(237,232,223,.6)" stroke-width="1" stroke-dasharray="5 5" ` +
     `vector-effect="non-scaling-stroke"/></svg><span>${L.damage_lane}</span>`;
   $("tz").innerHTML = segments().map(s =>
     `<div style="left:${pct(s.a)};width:${pct(s.b - s.a)}"><span>${s.name}</span><b>${s.T.toFixed(0)} °C</b></div>`
@@ -662,9 +664,9 @@ function initWorld() {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene3 = new THREE.Scene();
-  scene3.fog = new THREE.Fog(0x111926, 90, 190);
+  scene3.fog = new THREE.Fog(0x0F0E0C, 90, 190);
   const camera = new THREE.PerspectiveCamera(30, 1, 0.5, 420);
-  scene3.add(new THREE.HemisphereLight(0xdde7f6, 0x0a0f17, 1.45));
+  scene3.add(new THREE.HemisphereLight(0xEDE6DA, 0x0B0A08, 1.45));
   const key = new THREE.DirectionalLight(0xffffff, 2.3);
   key.position.set(-10, 46, 30); key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -672,7 +674,7 @@ function initWorld() {
   key.shadow.bias = -0.0005; key.shadow.normalBias = 0.03; key.shadow.radius = 4;
   key.target.position.set(D.geo.L / 2 + 2, 0, 0);
   scene3.add(key, key.target);
-  const rim = new THREE.DirectionalLight(0x8fb3e6, 0.9); rim.position.set(44, 16, -36); scene3.add(rim);
+  const rim = new THREE.DirectionalLight(0xA9B6C6, 0.8); rim.position.set(44, 16, -36); scene3.add(rim);
 
   tex.glow = canvasTex(128, (g, s) => {
     const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
@@ -680,7 +682,7 @@ function initWorld() {
     g.fillStyle = gr; g.fillRect(0, 0, s, s);
   });
   tex.grid = canvasTex(1024, (g, s) => {
-    g.strokeStyle = "rgba(205,219,240,0.11)"; g.lineWidth = 1;
+    g.strokeStyle = "rgba(237,232,223,0.09)"; g.lineWidth = 1;
     for (let i = 0; i <= s; i += s / 40) {
       g.beginPath(); g.moveTo(i, 0); g.lineTo(i, s); g.stroke();
       g.beginPath(); g.moveTo(0, i); g.lineTo(s, i); g.stroke();
@@ -692,8 +694,8 @@ function initWorld() {
   });
   // Belt surface: fine cross grooves, so the belt visibly runs when playing.
   tex.belt = canvasTex(256, (g, s) => {
-    g.fillStyle = "#c3cbd7"; g.fillRect(0, 0, s, s);
-    g.fillStyle = "#97a1b0";
+    g.fillStyle = "#CFC8BC"; g.fillRect(0, 0, s, s);
+    g.fillStyle = "#A39B8E";
     for (let x = 0; x < s; x += 32) g.fillRect(x, 0, 3, s);
   });
   buildLUT();
@@ -737,12 +739,12 @@ function measureSafe() {
 // Belt frame: shadow-catching floor, grid, bed, drum, rails, rollers, legs.
 function buildStatic() {
   const { L: Lx, r, bw } = D.geo, s = W.scene;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(420, 420), new THREE.ShadowMaterial({ opacity: .42, color: 0x04070c }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(420, 420), new THREE.ShadowMaterial({ opacity: .42, color: 0x050403 }));
   floor.rotation.x = -Math.PI / 2; floor.position.y = FLOOR; floor.receiveShadow = true; s.add(floor);
   const grid = new THREE.Mesh(new THREE.PlaneGeometry(170, 170), new THREE.MeshBasicMaterial({ map: tex.grid, transparent: true, depthWrite: false }));
   grid.rotation.x = -Math.PI / 2; grid.position.set(Lx / 2 + 3, FLOOR + .02, 0); s.add(grid);
-  const bed = new THREE.MeshStandardMaterial({ color: 0x1b2433, roughness: .86, metalness: .18 });
-  const steel = new THREE.MeshStandardMaterial({ color: 0x8b97ab, roughness: .3, metalness: .86 });
+  const bed = new THREE.MeshStandardMaterial({ color: 0x221E1A, roughness: .86, metalness: .18 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x9A948B, roughness: .3, metalness: .86 });
   W.steel = steel;
   const add = (geo, mat, x, y, z) => {
     const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; s.add(m); return m;
@@ -859,7 +861,7 @@ function addCrack(m, seed) {
   CRACK_EDGE = CRACK_EDGE || new THREE.MeshBasicMaterial({ color: 0x0d0907, transparent: true, opacity: .7,
     side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
   const edge = new THREE.Mesh(ribbonGeo(segs, 2.4), CRACK_EDGE);
-  const core = new THREE.Mesh(ribbonGeo(segs, 1), new THREE.MeshBasicMaterial({ color: 0xe9c46a, transparent: true,
+  const core = new THREE.Mesh(ribbonGeo(segs, 1), new THREE.MeshBasicMaterial({ color: 0xE3B65A, transparent: true,
     opacity: 1, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }));
   edge.renderOrder = 2; core.renderOrder = 3;
   // The sink mark itself: a shallow dark dent where the arms start.
@@ -888,7 +890,7 @@ function buildHero() {
     new THREE.MeshBasicMaterial({ map: tex.glow, color: 0xffffff, transparent: true, opacity: .3, depthWrite: false, blending: THREE.AdditiveBlending }));
   glow.rotation.x = -Math.PI / 2; glow.position.y = .025;
   const beamG = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, H + .2, 0), new THREE.Vector3(0, H + 4.2, 0)]);
-  const beam = new THREE.Line(beamG, new THREE.LineBasicMaterial({ color: 0xe8edf4, transparent: true, opacity: .55 }));
+  const beam = new THREE.Line(beamG, new THREE.LineBasicMaterial({ color: 0xEDE8DF, transparent: true, opacity: .55 }));
   const g = new THREE.Group(); g.add(body, halo, glow, beam);
   W.scene.add(g);
   W.hero = { g, body, halo, glow };
@@ -913,7 +915,7 @@ function rebuildWorld() {
   const { L: Lx, r, bw } = D.geo, tc = D.tc, tt = D.tt, arc = Math.PI * r, ret = arc + Lx;
   // Belt: graphite with a hint of each zone's air temperature; the bright
   // edge strip carries the zone colour. Grooves move with the line.
-  const mix = (hex, k) => new THREE.Color(hex).lerp(new THREE.Color(0x232c3b), k);
+  const mix = (hex, k) => new THREE.Color(hex).lerp(new THREE.Color(0x2A2621), k);
   const beltTex = (w, lane) => {
     const t = tex.belt.clone(); t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(Math.max(w, .1) / 1.6, 1); t.needsUpdate = true; W.belts.push({ t, lane }); return t;
@@ -988,8 +990,8 @@ function nozzle(h) {
   const hood = w > 3.2, bx = hood ? w : Math.max(w * .5, .55), y = H + 2.0;
   const g = new THREE.Group(); g.position.set(xc, 0, -r);
   const body = new THREE.Mesh(new THREE.BoxGeometry(bx, hood ? .12 : .34, 2 * bw + .8),
-    new THREE.MeshStandardMaterial({ color: hood ? hot : 0x4a566e, roughness: .32, metalness: hood ? .1 : .82,
-      emissive: 0xe8edf4, emissiveIntensity: 0, transparent: hood, opacity: hood ? .28 : 1, depthWrite: !hood }));
+    new THREE.MeshStandardMaterial({ color: hood ? hot : 0x5A544C, roughness: .32, metalness: hood ? .1 : .82,
+      emissive: 0xEDE8DF, emissiveIntensity: 0, transparent: hood, opacity: hood ? .28 : 1, depthWrite: !hood }));
   body.position.y = y; body.castShadow = !hood;
   const posts = [-1, 1].map(e => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(.14, y + .1, .14), W.steel);
