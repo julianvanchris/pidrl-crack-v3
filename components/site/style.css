@@ -39,7 +39,7 @@ section { position: relative; padding: clamp(84px, 13vh, 168px) 0; }
 /* ---------------------------------------------------------------- loader, grain, cursor, progress */
 #loader { position: fixed; inset: 0; z-index: 3000; background: var(--night); color: var(--nightText); display: grid; place-items: center; align-content: center; gap: 14px;
   transition: opacity .9s var(--ease), visibility .9s, clip-path 1s var(--ease); clip-path: inset(0 0 0 0); }
-#loader.done { opacity: 0; visibility: hidden; clip-path: inset(0 0 100% 0); }
+#loader.done { opacity: 0; visibility: hidden; clip-path: inset(0 0 100% 0); pointer-events: none; }   /* never block the wheel while it fades */
 .ld-stick { width: 34px; height: 68px; animation: ld-cool 1.6s var(--ease) infinite alternate; }
 @keyframes ld-cool { from { filter: saturate(1.4) brightness(1.1); transform: translateY(0); } to { filter: saturate(.6) brightness(.85); transform: translateY(-4px); } }
 .ld-word { font: 400 46px/1 var(--serif); letter-spacing: -.01em; }
