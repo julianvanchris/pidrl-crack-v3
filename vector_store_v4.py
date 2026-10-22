@@ -356,8 +356,9 @@ def chunk_knowledge_base(kb: dict, extra: dict = None) -> list:
     if tgt:
         chunks.append({
             "text": (
-                f"DRL optimal targets: DI safe<{tgt.get('DI_safe')}, "
-                f"caution<{tgt.get('DI_caution')}, warning<{tgt.get('DI_warning')}. "
+                f"DRL optimal targets: production-ready peak DI <= {tgt.get('DI_safe')}; "
+                f"cracks begin at {tgt.get('DI_caution')} (CAUTION), WARNING from {tgt.get('DI_warning')}, "
+                f"CRITICAL from {tgt.get('DI_critical')}. "
                 f"Total time target <= {tgt.get('total_time_target_min')} min. "
                 f"Recommended {tgt.get('recommended_zones')} zones. "
                 f"T_reheat range {tgt.get('recommended_T_reheat_range_C')}C, "
@@ -376,7 +377,11 @@ def chunk_knowledge_base(kb: dict, extra: dict = None) -> list:
     # ── Physics constants / DI scale ────────────────────────────────────
     pc = kb.get("physics_constants", {})
     if pc.get("DI_scale"):
-        scale_text = "; ".join(f"{k}: {v}" for k, v in pc["DI_scale"].items())
+        meaning = {"SAFE": "top surface within limits; no sink marks below 0.15, faint marks possible from 0.15",
+                   "CAUTION": "sink marks and the first cracks", "WARNING": "clear sink marks and cracks",
+                   "CRITICAL": "severe defects, production reject"}
+        scale_text = "; ".join(f"{k} {v[0]}-{v[1]}" + (f" ({meaning[k]})" if k in meaning else "")
+                               for k, v in pc["DI_scale"].items())
         chunks.append({
             "text": f"Damage Index (DI) scale: {scale_text}",
             "metadata": {"source": "physics_constants", "type": "DI_scale"},

@@ -264,21 +264,17 @@
     "DI_scale": {
       "SAFE": [
         0.0,
-        0.1
-      ],
-      "CAUTION": [
-        0.1,
         0.25
       ],
-      "WARNING": [
+      "CAUTION": [
         0.25,
         0.5
       ],
-      "CRITICAL": [
+      "WARNING": [
         0.5,
         0.8
       ],
-      "FAILURE": [
+      "CRITICAL": [
         0.8,
         1.0
       ]

@@ -454,11 +454,8 @@ class RuleBasedAdvisor:
         self.tgt   = kb.get("drl_targets", {})
 
     def _risk_level(self, DI: float) -> str:
-        scale = self.pc.get("DI_scale", {})
-        for level, (lo, hi) in scale.items():
-            if lo <= DI < hi:
-                return level
-        return "FAILURE" if DI >= 0.80 else "SAFE"
+        """The site's scale (main_3d_v4._rlbl), so the advisor and the page agree: cracks begin at 0.25."""
+        return "CRITICAL" if DI >= 0.80 else "WARNING" if DI >= 0.50 else "CAUTION" if DI >= 0.25 else "SAFE"
 
     def analyze(self, sim: dict) -> str:
         DI_pk  = sim.get("DI_peak",   0.0)
@@ -473,11 +470,11 @@ class RuleBasedAdvisor:
 
         # Assessment
         risk_text = {
-            "SAFE":     "✅ No ヒケ expected — product quality acceptable.",
+            "SAFE":     ("✅ Top surface within limits — no cracks expected." if DI_pk >= 0.15
+                         else "✅ No ヒケ expected — product quality acceptable."),
             "CAUTION":  "⚠️ Sink marks and the first cracks expected on the top surface.",
             "WARNING":  "🔶 Clear ヒケ (sink marks) and cracks expected — process adjustment needed.",
             "CRITICAL": "🚨 Severe surface defects — production reject likely.",
-            "FAILURE":  "🛑 Critical failure — halt and redesign cooling schedule.",
         }.get(rl, "Unknown risk level.")
 
         # Root cause
@@ -585,7 +582,8 @@ class RuleBasedAdvisor:
                 "Where:\n"
                 "  k_form ∝ Biot × liquid_fraction (rises during mushy zone)\n"
                 "  k_heal ∝ (T−55)/10 × 3.5 (activated when surface > 55°C in reheat)\n"
-                "Thresholds: SAFE<0.10, CAUTION<0.25, WARNING<0.50, CRITICAL<0.80."
+                "Scale: SAFE<0.25 (sink marks can show from 0.15), CAUTION 0.25–0.50 (cracks begin), "
+                "WARNING 0.50–0.80, CRITICAL≥0.80. Production-ready target: peak DI ≤ 0.10."
             )
         if any(w in q for w in ["30 min", "time", "duration", "target"]):
             return (
@@ -722,11 +720,13 @@ class GroqEngine:
     FALLBACK_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 
     @staticmethod
-    def _limits(m: str, max_tokens: int) -> dict:
+    def _limits(m: str, max_tokens: int, effort: str = "medium") -> dict:
         """gpt-oss models reason before they answer, and the reasoning counts
-        against max_tokens: keep it brief and leave room for the answer."""
+        against max_tokens: leave room for it on top of the answer. Analyses and
+        answers reason with care ("medium"); quick items such as follow-up chips use "low"."""
         if m.startswith("openai/gpt-oss"):
-            return {"max_tokens": max_tokens + 1000, "extra_body": {"reasoning_effort": "low"}}
+            room = 2500 if effort == "medium" else 1000
+            return {"max_tokens": max_tokens + room, "extra_body": {"reasoning_effort": effort}}
         return {"max_tokens": max_tokens}
 
     def __init__(self, api_key: str, model: str = GROQ_MODEL_DEFAULT):
@@ -776,7 +776,7 @@ class GroqEngine:
             raise last_exc
 
     def generate(self, system: str, prompt: str,
-                 temperature: float = 0.3, max_tokens: int = 700) -> str:
+                 temperature: float = 0.3, max_tokens: int = 700, effort: str = "medium") -> str:
         """Non-streaming completion → full text (auto model fallback)."""
         last_exc = None
         for m in self.models:
@@ -785,7 +785,7 @@ class GroqEngine:
                     model=m, messages=[{"role": "system", "content": system},
                                        {"role": "user", "content": prompt}],
                     temperature=temperature, top_p=0.9, stream=False,
-                    **self._limits(m, max_tokens),
+                    **self._limits(m, max_tokens, effort),
                 )
                 self.model = m; self.last_error = ""
                 return (resp.choices[0].message.content or "").strip()
@@ -801,7 +801,7 @@ class GroqEngine:
     def ping(self):
         """One-token connectivity/credential check. Returns (ok, error_str)."""
         try:
-            self.generate("You are a test.", "Reply with: ok", max_tokens=2)
+            self.generate("You are a test.", "Reply with: ok", max_tokens=2, effort="low")
             return True, ""
         except Exception as e:
             return False, str(e)
@@ -1347,7 +1347,7 @@ class PILLMAdvisor:
         txt = ""
         try:
             if self.groq_engine is not None:
-                txt = self.groq_engine.generate(sys, prompt, max_tokens=120, temperature=0.5)
+                txt = self.groq_engine.generate(sys, prompt, max_tokens=120, temperature=0.5, effort="low")
             elif self._mode.startswith("ollama") and self.model_health.get("healthy") is not False:
                 model = self._mode.split(":")[1].split("+")[0]
                 txt = self.client.generate(model, prompt, system=sys,

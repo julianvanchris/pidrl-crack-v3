@@ -301,12 +301,11 @@ def extract_knowledge(raw: dict) -> dict:
             "k_thermal_WmK": 0.25,
             "R_m":           0.0125,
             "H_m":           0.04,
-            "DI_scale": {
-                "SAFE":     [0.00, 0.10],
-                "CAUTION":  [0.10, 0.25],
-                "WARNING":  [0.25, 0.50],
-                "CRITICAL": [0.50, 0.80],
-                "FAILURE":  [0.80, 1.00],
+            "DI_scale": {                      # the site's scale (main_3d_v4._rlbl): cracks begin at 0.25
+                "SAFE":     [0.00, 0.25],
+                "CAUTION":  [0.25, 0.50],
+                "WARNING":  [0.50, 0.80],
+                "CRITICAL": [0.80, 1.00],
             },
         },
     }
@@ -418,11 +417,11 @@ PHYSICS RULES (derived from experiments)
 ═══════════════════════════════════════════════════
 DAMAGE INDEX (DI) SCALE
 ═══════════════════════════════════════════════════
-- DI 0.00–0.10: SAFE     — No ヒケ expected
-- DI 0.10–0.25: CAUTION  — Minor surface imperfections possible
-- DI 0.25–0.50: WARNING  — ヒケ (sink marks) likely visible
-- DI 0.50–0.80: CRITICAL — Severe defects, production reject
-- DI 0.80–1.00: FAILURE  — Halt production immediately
+- DI 0.00–0.25: SAFE     — Top surface within limits: no ヒケ below 0.15, faint marks possible from 0.15
+- DI 0.25–0.50: CAUTION  — ヒケ (sink marks) and the first cracks expected
+- DI 0.50–0.80: WARNING  — Clear sink marks and cracks expected
+- DI 0.80–1.00: CRITICAL — Severe defects, production reject
+- Production-ready target: peak DI ≤ 0.10
 
 The DI is computed from a Physics-Informed Neural Network (PINN) trained on
 the heat equation with phase-field evolution:
