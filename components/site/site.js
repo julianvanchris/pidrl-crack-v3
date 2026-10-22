@@ -114,6 +114,13 @@
   }
   function applyRecipe(c) {                                // an optimiser result: cooling, air flow and its reheat
     S.r.zones = clone(c.zones); S.r.reheat = clone(c.reh); S.r.h_cool = c.h_cool; S.r.h_reheat = c.h_reh;
+    const reh = S.r.reheat;                                // a new burst pattern comes as a count: lay the bursts out
+    if (reh.mode === "pulsed" && !(reh.bursts && reh.bursts.length))
+      reh.bursts = E.evenBursts(reh.pulses || 5, reh.pulse_sec || 20, Math.min(reh.pulse_window == null ? 6 : reh.pulse_window, tCool()));
+  }
+  function atPage(b, r) {                                  // the search scores on a coarser timeline; report the page's own
+    const ts = E.buildTimeline(r.T_fill, b.zones, b.reh, b.h_cool, b.h_reh, 120, r.melt, r.late);
+    b.di = Math.max(...ts.DI); b.t = ts.t_total; return b;
   }
   function loadOption(id) {
     const i = A.scenarios.findIndex(sc => sc.id === id);
@@ -310,10 +317,8 @@
       const on = reh.bursts.reduce((s, b) => s + b[1], 0) / 60;
       note = tf("pulse_note", { n: reh.bursts.length, s: Math.trunc(reh.pulse_sec), on }) + (reh.custom ? " " + t("pattern_custom") : "");
     } else {
-      if (reh.duration > 0) {
-        const Tl = r.zones[r.zones.length - 1].T, Tr = reh.T - (reh.T - Tl) * Math.exp(-reh.duration / 3);
-        note = tf("reach", { T: Tr, flag: Tr >= E.C.T_SOL ? t("reach_ok") : t("reach_soft") });
-      }
+      const Tr = reh.duration > 0 ? hotEnd(S.ts) : null;     // the model's surface as the hot air ends
+      if (Tr != null) note = tf("reach", { T: Tr, flag: Tr >= S.ts.mushy[0] ? t("reach_ok") : t("reach_soft") });
       if (mode === "simultaneous") note += (note ? " " : "") + t("reheat_sim_note");
     }
     $("#rehNote").textContent = note;
@@ -335,6 +340,7 @@
       const btn = $("#optBtn"); btn.classList.add("busy"); $("#optNote").textContent = t("drl_spin");
       setTimeout(() => {
         const r = S.r, best = E.optimise(r.T_fill, r.reheat, r.h_cool, r.h_reheat, r.melt, r.late, S.scope), kinds = Object.keys(best);
+        kinds.forEach(k => atPage(best[k], r));
         if (kinds.length) {
           const pick = best[E.reheatKind(r.reheat)] || kinds.map(k => best[k]).reduce((a, b) => (b.score < a.score ? b : a));
           applyRecipe(pick);
@@ -348,20 +354,38 @@
     });
   }
 
+  // ---------------------------------------------------------------- what the top reheat does
+  // After cooling, the hot air heals damage that has already formed: its effect is the drop across it. During
+  // cooling (the top only, or bursts) it comes first and keeps the damage from forming, so its effect is the peak
+  // of the same cooling without it, minus the peak with it.
+  const early = ts => ts.t_reheat > 0 && ts.reheat_mode !== "sequential";
+  const argmax = a => a.reduce((k, v, i) => (v > a[k] ? i : k), 0);
+  const signed = v => (v >= 0 ? "+" : "−") + Math.abs(E.rnd(v, 3)).toFixed(3);
+  function bare(ts, hCool) {                               // the same cooling, with no top reheat
+    return E.buildTimeline(ts.T_fill, ts.zones, { T: ts.reheat_T, duration: 0, mode: "sequential" }, hCool, 12, 120, ts.melt, ts.late_cool_T);
+  }
+  function hotEnd(ts) {                                    // the surface as the hot air ends, from the model
+    const sp = E.reheatSpans(ts);
+    return sp.length ? ts.T_surf[E.nearest(ts.times, sp[sp.length - 1][1])] : null;
+  }
+
   // ---------------------------------------------------------------- the live panel
-  function readout(ts, hCool) {                            // _readout_cells of main_3d_v4.py
+  function readout(ts, hCool) {                            // _readout_cells of main_3d_v4.py, plus the reheat's effect
     const DI = Math.max(...ts.DI), tt = ts.t_total, Bi = hCool * E.C.R_M / E.C.K_TH, mode = ts.reheat_mode, Ta = ts.reheat_T;
     const spans = E.reheatSpans(ts), heal = E.heal(ts), caution = RISK.CAUTION;
     let rv, rn;
     if (mode === "pulsed" && spans.length) { rv = tf("reheat_val_pul", { n: Math.trunc(ts.n_pulse), s: Math.trunc(ts.pulse_sec) }); rn = tf("reheat_note_pul", { T: Ta }); }
     else if (spans.length) { const k = mode === "simultaneous" ? "sim" : "seq"; rv = tf("reheat_val_" + k, { T: Ta, d: ts.t_reheat }); rn = t("reheat_note_" + k); }
     else { rv = t("reheat_off"); rn = t("st_none"); }
+    let fx = [t("ro_heal"), "–", t("st_none"), null, null];
+    if (spans.length && early(ts)) { const pb = Math.max(...bare(ts, hCool).DI); fx = [t("ro_prevent"), signed(pb - DI), tf("st_without", { d: pb }), null, null]; }
+    else if (spans.length) fx = [t("ro_heal"), signed(heal), heal > 0.02 ? t("st_effective") : t("st_minimal"), null, null];
     return [
       [t("ro_di"), DI.toFixed(3), t("st_limit"), CH.rcol(DI), null],
       [t("ro_cycle"), `${tt.toFixed(0)}<small>${esc(t("min"))}</small>`, tt <= 30 ? t("st_within") : tf("st_over", { d: tt - 30 }), null, tt <= 30 ? null : caution],
       [t("ro_exit"), `${ts.T_surf[ts.T_surf.length - 1].toFixed(0)}<small>°C</small>`, tf("st_exit", { t: tt }), null, null],
       [t("ro_biot"), Bi.toFixed(2), Bi <= 0.5 ? t("st_uniform") : t("st_uneven"), null, Bi <= 0.5 ? null : caution],
-      [t("ro_heal"), spans.length ? (heal >= 0 ? "+" : "") + E.rnd(heal, 3).toFixed(3) : "–", heal > 0.02 ? t("st_effective") : spans.length ? t("st_minimal") : t("st_none"), null, null],
+      fx,
       [t("ro_reheat"), esc(rv), rn, null, null]];
   }
   function heroData(ts, hCool) {
@@ -478,7 +502,7 @@
   }
   function caseOpt(i) {
     const sc = A.scenarios[i], best = E.optimise(sc.T_fill, sc.reheat, sc.h_cool, sc.h_reheat, sc.melt, sc.late, S.scope), v = Object.values(best);
-    S.caseOpt[sc.id + "|" + S.scope] = v.length ? v.reduce((a, b) => (b.score < a.score ? b : a)) : null;
+    S.caseOpt[sc.id + "|" + S.scope] = v.length ? atPage(v.reduce((a, b) => (b.score < a.score ? b : a)), sc) : null;
   }
   function wireCases() {
     $("#caseCols").addEventListener("click", e => {
@@ -521,18 +545,29 @@
   // ---------------------------------------------------------------- 05 surface
   function renderSurface() {
     const ts = S.ts, n = ts.DI.length, spans = E.reheatSpans(ts), has = spans.length > 0;
-    const ie = has ? E.nearest(ts.times, spans[spans.length - 1][1]) : n - 1;
-    let ib = 0; for (let i = 0; i < Math.max(1, ie + 1); i++) if (ts.DI[i] > ts.DI[ib]) ib = i;
-    const ia = has ? ie : n - 1, DIb = ts.DI[ib], DIa = ts.DI[ia], drop = DIb - DIa;
     const lab = { top: t("s_surf_top"), sec: t("s_surf_sec"), free: t("crack_free") };
     const card = (title, tm, di) => `<div class="sd"><div class="sd-h"><b>${esc(title)}</b><span>${esc(tf("f_at", { t: tm }))}</span></div>` +
       CH.surfaceArt(di, 4242, Object.assign({ label: title }, lab)) +
       `<div class="sd-f"><b style="color:${CH.rcol(di)}">${di.toFixed(3)}</b><i class="chip" style="color:${CH.rcol(di)}">${esc(rname(di))}</i></div></div>`;
+    const sf = $("#surface .stand");
+    sf.dataset.t = has && early(ts) ? "sf_crack_early" : "sf_crack"; sf.textContent = t(sf.dataset.t);
+    if (has && early(ts)) {                                // hot air during cooling: the same cooling without it, then with it
+      const b = bare(ts, S.r.h_cool), jb = argmax(b.DI), ja = argmax(ts.DI), Pb = b.DI[jb], Pa = ts.DI[ja], cut = Pb - Pa;
+      $("#surf").innerHTML = card(t("s_without"), b.times[jb], Pb) + card(t("s_with"), ts.times[ja], Pa);
+      $("#surfNote").innerHTML = cut > 0.005
+        ? esc(tf("s_prevent_note", { a: Pa, b: Pb, p: Math.round(cut / Math.max(Pb, 0.01) * 100) })) +
+          (Pa < 0.25 && Pb >= 0.25 ? ` <span class="ok">${esc(t("crack_free"))}</span>` : "")
+        : esc(t("s_prevent_small"));
+      return;
+    }
+    const ie = has ? E.nearest(ts.times, spans[spans.length - 1][1]) : n - 1;
+    let ib = 0; for (let i = 0; i < Math.max(1, ie + 1); i++) if (ts.DI[i] > ts.DI[ib]) ib = i;
+    const ia = has ? ie : n - 1, DIb = ts.DI[ib], DIa = ts.DI[ia], drop = DIb - DIa;
     $("#surf").innerHTML = card(t("before_reheat"), ts.times[ib], DIb) + card(has ? t("after_reheat") : t("end_cycle"), ts.times[ia], DIa);
     let note;
     if (drop > 0.005) {
       const eff = Math.trunc(drop / Math.max(DIb, 0.01) * 100);
-      note = `<b>${esc(t("healing_eff"))} ${eff}%</b>${esc(S.r.reheat.T >= 62 ? t("optimal_healing") : t("softening_only"))}` +
+      note = `<b>${esc(t("healing_eff"))} ${eff}%.</b> ${esc(hotEnd(ts) >= ts.mushy[0] ? t("optimal_healing") : t("softening_only"))}` +
         (DIa < 0.25 && DIb >= 0.25 ? ` <span class="ok">${esc(t("crack_free"))}</span>` : "");
     } else note = esc(has ? t("min_healing") : t("no_reheat"));
     $("#surfNote").innerHTML = note;
@@ -547,9 +582,10 @@
     const rk = DI <= 0.10 ? "rec_excellent" : DI < 0.25 ? "rec_good" : DI <= 0.50 ? "rec_warning" : "rec_critical";
     $("#rec").style.borderLeftColor = CH.rcol(DI);
     $("#rec").innerHTML = `<div class="rp-k">${esc(t("rep_rec"))}</div><p>${esc(tf(rk, { di: DI, n: nz, t: tt }))}</p>`;
-    const sg = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3);
+    const pre = spans.length > 0 && early(ts), Pb = pre ? Math.max(...bare(ts, r.h_cool).DI) : 0;
+    const fx = pre ? Pb - DI : drop;                       // what the hot air does: damage kept off, or damage healed
     const checks = [[t("chk_time"), tt <= 30, `${tt.toFixed(0)} ${t("min")}`], [t("chk_biot"), Bi <= 0.5, Bi.toFixed(2)], [t("chk_last"), Tl <= 42, `${Tl.toFixed(0)} °C`],
-      [t("chk_di"), DI < 0.25, DI.toFixed(3)], [t("chk_hike"), DI < 0.15, DI.toFixed(3)], [t("chk_heal"), drop > 0.01 || !spans.length, sg(drop)]];
+      [t("chk_di"), DI < 0.25, DI.toFixed(3)], [t("chk_hike"), DI < 0.15, DI.toFixed(3)], [t("chk_heal"), !spans.length || fx > 0.01, spans.length ? signed(fx) : "–"]];
     $("#chkK").innerHTML = `${esc(t("rep_checks"))}<b>${checks.filter(c => c[1]).length} / ${checks.length}</b>`;
     $("#chk").innerHTML = checks.map(([l, ok, v]) => `<li class="${ok ? "ok" : "no"}"><i>${ok ? "✓" : "✕"}</i><span>${esc(l)}</span><b>${esc(v)}</b></li>`).join("");
     let acc = 0;
@@ -558,10 +594,11 @@
         return `<tr><td><i style="background:${CH.heat(z.T)}"></i>${esc(tf("zone_n", { n: i + 1 }))}</td><td>${z.T.toFixed(0)}</td><td>${z.duration.toFixed(1)}</td><td>${acc.toFixed(1)} ${esc(t("min"))}</td><td>${esc(ph)}</td></tr>`; }).join("") + `</tbody></table>`;
     if (!spans.length) $("#rehDl").innerHTML = `<p class="note">${esc(t("rh_none"))}</p>`;
     else {
-      const Tr = r.reheat.T - (r.reheat.T - Tl) * Math.exp(-ts.t_reheat / 3), state = Tr >= liq ? t("rh_full") : Tr >= sol ? t("rh_mushy") : t("rh_soft");
+      const Tr = hotEnd(ts), state = Tr >= liq ? t("rh_full") : Tr >= sol ? t("rh_mushy") : t("rh_soft");
       const air = ts.reheat_mode === "pulsed" ? tf("belt_bursts", { n: ts.n_pulse, s: Math.trunc(ts.pulse_sec), T: r.reheat.T }) : `${r.reheat.T.toFixed(0)} °C, ${ts.t_reheat.toFixed(0)} ${t("min")}`;
-      $("#rehDl").innerHTML = `<dl class="rp-dl"><dt>${esc(t("rh_mode"))}</dt><dd>${esc(t(MODE_KEY[ts.reheat_mode]))}</dd><dt>${esc(t("rh_air"))}</dt><dd>${esc(air)}</dd>` +
-        `<dt>${esc(t("rh_reach"))}</dt><dd>${Tr.toFixed(0)} °C, ${esc(state)}</dd><dt>${esc(t("rh_heal"))}</dt><dd>${sg(drop)}</dd></dl>`;
+      const rows = [[t("rh_mode"), t(MODE_KEY[ts.reheat_mode])], [t("rh_air"), air], [t("rh_reach"), `${Tr.toFixed(0)} °C, ${state}`]]
+        .concat(pre ? [[t("rh_without"), Pb.toFixed(3)], [t("rh_prevent"), signed(fx)]] : [[t("rh_heal"), signed(fx)]]);
+      $("#rehDl").innerHTML = `<dl class="rp-dl">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
     }
   }
   function download() {
@@ -691,7 +728,16 @@
   function flash(el) { if (!el) return; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
 
   // ---------------------------------------------------------------- page: navigation, index, reveal, cursor
-  function go(id) { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); document.body.classList.remove("menu-open"); }
+  function go(id) {
+    const el = document.getElementById(id); document.body.classList.remove("menu-open");
+    if (!el) return;
+    // sections passed on the way (the chart, the 3D line) render as they come near and can push the target down:
+    // if they did, go again once the scroll ends
+    const y0 = el.offsetTop, again = () => { if (Math.abs(el.offsetTop - y0) > 4) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    SC.addEventListener("scrollend", again, { once: true });
+    setTimeout(() => SC.removeEventListener("scrollend", again), 3000);
+  }
   function buildIndex() {
     $("#sideIndex").innerHTML = $$("main section[data-tk]").map(s => `<a href="#${s.id}" data-go="${s.id}"><span>${esc(t(s.dataset.tk))}</span><i></i></a>`).join("");
   }

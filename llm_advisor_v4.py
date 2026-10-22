@@ -75,6 +75,26 @@ MAX_TOKENS    = 350         # response length cap (reduced for speed)
 CACHE_SIZE    = 32          # cached responses
 RAG_TOP_K     = 5           # number of retrieved chunks per query
 
+_TIMING = {"sequential": "after cooling", "simultaneous": "on the top surface during cooling",
+           "pulsed": "pulsed bursts on the top surface during cooling"}
+
+def _reheat_text(sim: dict) -> str:
+    """The top reheat of a run in words. After cooling it heals damage that has formed; during cooling
+    it comes first and keeps the damage from forming, so it is set against the same cooling without it."""
+    mode = (sim or {}).get("reheat_mode", "")
+    if mode == "none":
+        return "Top reheat: none."
+    if mode not in _TIMING:
+        return ""
+    what = (f"{sim.get('bursts', 'bursts')} at {sim.get('T_reheat', 0):.0f}C" if mode == "pulsed"
+            else f"{sim.get('T_reheat', 0):.0f}C for {sim.get('t_reheat', 0):.0f} min")
+    s = f"Top reheat: {what}, {_TIMING[mode]}."
+    if "DI_peak_no_reheat" in sim:
+        s += (f" It runs before the damage forms, so it prevents damage rather than healing it: peak DI "
+              f"{sim.get('DI_peak', 0):.3f} with it, {sim['DI_peak_no_reheat']:.3f} with the same cooling and "
+              f"no top reheat.")
+    return s
+
 # ─── GPU offload control ────────────────────────────────────────────────────
 # CRITICAL FIX for the "[TIMEOUT] cold start exceeded budget" problem on
 # AMD Ryzen APUs (e.g. 5750G with integrated Radeon Vega):
@@ -454,8 +474,8 @@ class RuleBasedAdvisor:
         # Assessment
         risk_text = {
             "SAFE":     "✅ No ヒケ expected — product quality acceptable.",
-            "CAUTION":  "⚠️ Minor surface imperfections possible at top fill point.",
-            "WARNING":  "🔶 ヒケ (sink marks) likely visible — process adjustment needed.",
+            "CAUTION":  "⚠️ Sink marks and the first cracks expected on the top surface.",
+            "WARNING":  "🔶 Clear ヒケ (sink marks) and cracks expected — process adjustment needed.",
             "CRITICAL": "🚨 Severe surface defects — production reject likely.",
             "FAILURE":  "🛑 Critical failure — halt and redesign cooling schedule.",
         }.get(rl, "Unknown risk level.")
@@ -501,6 +521,9 @@ class RuleBasedAdvisor:
                 "surface should be smooth." if DI_pk < 0.10
                 else f"expect {'slight' if DI_pk < 0.25 else 'visible'} depression at top fill point."
             ),
+            (f"  Top reheat during cooling keeps the peak at DI {DI_pk:.3f}, against "
+             f"{sim['DI_peak_no_reheat']:.3f} with the same cooling and no top reheat "
+             f"(ΔDI {sim['DI_peak_no_reheat'] - DI_pk:+.3f} prevented).") if "DI_peak_no_reheat" in sim else
             f"  Reheat healed ΔDI = {heal:+.3f} ({(heal/max(DI_pk,0.01)*100):.0f}% of peak)." if heal > 0.005 else
             f"  No healing applied.",
             f"\nROOT CAUSE:",
@@ -1077,10 +1100,13 @@ class PILLMAdvisor:
             f"h_cool={sim_results.get('h_cool', 6):.1f}W/m2K | "
             f"Bi={sim_results.get('Bi', 0):.3f} | "
             f"Peak_DI={DI_pk:.4f} | Final_DI={sim_results.get('DI_final', 0):.4f} | "
-            f"DI_healed={sim_results.get('DI_healed', 0):+.4f} | "
+            + ("" if "DI_peak_no_reheat" in sim_results    # healing applies to reheat after cooling only
+               else f"DI_healed={sim_results.get('DI_healed', 0):+.4f} | ") +
             f"Total_time={sim_results.get('t_total', 0):.1f}min | "
             f"Risk={risk}"
         )
+        if _reheat_text(sim_results):
+            sim_block += "\n" + _reheat_text(sim_results)
 
         prompt = (
             f"Simulation result: {sim_block}\n\n"
@@ -1113,7 +1139,7 @@ class PILLMAdvisor:
                 f"Current simulation: DI_peak={sim_results.get('DI_peak',0):.3f} "
                 f"[{sim_results.get('risk','?')}], "
                 f"total={sim_results.get('t_total',0):.0f}min, "
-                f"Bi={sim_results.get('Bi',0):.3f}"
+                f"Bi={sim_results.get('Bi',0):.3f}. " + _reheat_text(sim_results)
             )
         if retrieved:
             ctx_parts.append(retrieved)
@@ -1158,7 +1184,7 @@ class PILLMAdvisor:
                 f"Current simulation: DI_peak={sim_results.get('DI_peak',0):.3f} "
                 f"[{sim_results.get('risk','?')}], "
                 f"total={sim_results.get('t_total',0):.0f}min, "
-                f"Bi={sim_results.get('Bi',0):.3f}"
+                f"Bi={sim_results.get('Bi',0):.3f}. " + _reheat_text(sim_results)
             )
         if retrieved:
             ctx_parts.append(retrieved)

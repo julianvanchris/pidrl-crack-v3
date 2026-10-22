@@ -367,10 +367,10 @@ TR = {
     "risk_safe": "Safe", "risk_caution": "Caution",
     "risk_warning": "Warning", "risk_critical": "Critical",
     "v_safe": "Flawless top surface expected.",
-    "v_caution": "Minor surface marks are possible.",
-    "v_warning": "Sink marks are likely on the top surface.",
+    "v_caution": "Sink marks and the first cracks are expected.",
+    "v_warning": "Clear sink marks and cracks are expected on the top surface.",
     "v_critical": "Severe surface defects are expected.",
-    "v_detail": "Peak damage index {di:.3f}. Sink marks begin to show at 0.25.",
+    "v_detail": "Peak damage index {di:.3f}. Sink marks can show from 0.15; cracks begin at 0.25.",
     "v_safe_hint": "This recipe meets the quality target.",
     "v_safe_margin": "Top surface within limits, with a small margin.",
     "v_safe_margin_hint": "Raise the hot air or slow the first zone to widen the margin.",
@@ -432,7 +432,7 @@ TR = {
                            "alongside cooling, so the cycle does not get longer."),
     "reheat_sim_note": "The core keeps cooling, so the cycle does not get longer.",
     "reach": "The surface reaches about {T:.0f} °C, {flag}.",
-    "reach_ok": "enough to re-melt and heal", "reach_soft": "which only softens it",
+    "reach_ok": "enough to re-melt and heal", "reach_soft": "which softens the skin without re-melting it",
     "pulse_count": "Number of bursts",
     "pulse_count_help": "How many hot-air bursts reach the top surface. CBIC uses about 5.",
     "pulse_dur": "Burst length, s",
@@ -556,7 +556,8 @@ TR = {
     "healed_by": "Reheat lowered the damage index by",
     "healing_eff": "Healing",
     "optimal_healing": "The surface re-entered the mushy band, so healing is strong.",
-    "softening_only": "The surface stayed below the solidus, so it only softened.",
+    "softening_only": ("The surface stayed below the solidus, so the hot air healed it by softening the skin, "
+                       "without re-melting it."),
     "no_reheat": "No reheat in this recipe. Add top reheat in step 4 to heal the surface.",
     "min_healing": "Healing is small. Raise the hot air to 80 °C or more, or reheat for longer.",
     # Report
@@ -570,7 +571,7 @@ TR = {
     "rec_good": ("Safe, with a small margin (peak damage index {di:.3f}). To widen it, raise "
                  "the hot air to 90 °C or more, or hold one cooling zone at 62–72 °C to slow "
                  "solidification."),
-    "rec_warning": ("Sink marks are likely on the top surface (peak damage index {di:.3f}). "
+    "rec_warning": ("Sink marks and cracks are expected on the top surface (peak damage index {di:.3f}). "
                     "Lower the cooling air h to 6 W/m²K or less, hold the first zone at "
                     "70–75 °C, and raise the hot air to 90–100 °C. Optimise, in step 7, can "
                     "search this for you."),
@@ -585,7 +586,7 @@ TR = {
     "rh_mode": "Timing", "rh_air": "Hot air", "rh_reach": "Surface reaches",
     "rh_heal": "Damage healed", "rh_none": "No reheat in this recipe.",
     "rh_full": "full re-melt", "rh_mushy": "mushy band, partial healing",
-    "rh_soft": "below the solidus, softening only",
+    "rh_soft": "below the solidus: softening, no re-melt",
     "run_first": "Results appear here once the simulation has run.",
     # Advisor
     "adv_online": "Advisor online", "adv_ready": "Advisor ready",
@@ -629,10 +630,10 @@ TR = {
     "outlook": "天面の見通し",
     "risk_safe": "安全", "risk_caution": "注意", "risk_warning": "警告", "risk_critical": "危険",
     "v_safe": "天面はきれいに仕上がる見込みです。",
-    "v_caution": "天面にわずかな跡が出る可能性があります。",
-    "v_warning": "天面にヒケが出る可能性が高いです。",
+    "v_caution": "ヒケと初期の亀裂が予想されます。",
+    "v_warning": "天面に明らかなヒケと亀裂が予想されます。",
     "v_critical": "重大な表面欠陥が予想されます。",
-    "v_detail": "最大損傷指数 {di:.3f}。0.25 を超えるとヒケが現れ始めます。",
+    "v_detail": "最大損傷指数 {di:.3f}。0.15からヒケが見え始め、0.25から亀裂が始まります。",
     "v_safe_hint": "この条件は品質目標を満たしています。",
     "v_safe_margin": "天面は許容範囲内ですが、余裕は小さめです。",
     "v_safe_margin_hint": "熱風を上げるか、第1ゾーンを緩やかにして余裕を広げてください。",
@@ -687,7 +688,7 @@ TR = {
                            "サイクルは長くなりません。"),
     "reheat_sim_note": "内部は冷却を続けるため、サイクルは長くなりません。",
     "reach": "表面は約 {T:.0f} ℃ に達し、{flag}。",
-    "reach_ok": "再溶融して回復します", "reach_soft": "軟化のみにとどまります",
+    "reach_ok": "再溶融して回復します", "reach_soft": "再溶融せず表皮を軟化させます",
     "pulse_count": "バースト回数",
     "pulse_count_help": "上面に当てる熱風バーストの回数。CBICは約5回です。",
     "pulse_dur": "バースト時間（秒）",
@@ -803,7 +804,7 @@ TR = {
     "healed_by": "再加熱で損傷指数が低下：",
     "healing_eff": "回復率",
     "optimal_healing": "表面がマッシー帯に再び入ったため、回復は十分です。",
-    "softening_only": "表面は固相線を下回ったままのため、軟化のみです。",
+    "softening_only": "表面は固相線を下回ったままで、熱風は再溶融ではなく表皮の軟化によって回復させました。",
     "no_reheat": "この条件には再加熱がありません。手順4で上面の再加熱を加えると表面が回復します。",
     "min_healing": "回復はわずかです。熱風を80 ℃以上にするか、再加熱時間を延ばしてください。",
     "rep_rec": "推奨事項", "rep_checks": "確認項目", "rep_recipe": "条件",
@@ -816,7 +817,7 @@ TR = {
     "rec_good": ("安全ですが余裕は小さめです（最大損傷指数 {di:.3f}）。余裕を広げるには、"
                  "熱風を90 ℃以上にするか、62〜72 ℃に保つ冷却ゾーンを1つ加えて凝固を"
                  "緩やかにしてください。"),
-    "rec_warning": ("天面にヒケが出る可能性が高いです（最大損傷指数 {di:.3f}）。冷却空気 h を"
+    "rec_warning": ("天面にヒケと亀裂が予想されます（最大損傷指数 {di:.3f}）。冷却空気 h を"
                     "6 W/m²K以下にし、第1ゾーンを70〜75 ℃に保ち、熱風を90〜100 ℃に上げて"
                     "ください。手順7の最適化で自動探索もできます。"),
     "rec_critical": ("重大なヒケと亀裂が予想されます（最大損傷指数 {di:.3f}）。上面を59〜63 ℃の"
@@ -828,7 +829,7 @@ TR = {
     "rh_mode": "タイミング", "rh_air": "熱風", "rh_reach": "表面到達温度",
     "rh_heal": "損傷の回復", "rh_none": "この条件には再加熱がありません。",
     "rh_full": "完全に再溶融", "rh_mushy": "マッシー帯、部分的に回復",
-    "rh_soft": "固相線以下、軟化のみ",
+    "rh_soft": "固相線以下：再溶融なしの軟化",
     "run_first": "シミュレーション実行後に結果が表示されます。",
     "adv_online": "アドバイザー稼働中", "adv_ready": "アドバイザー準備完了",
     "detailed_analysis": "この結果の分析", "retry": "分析を更新",
@@ -867,22 +868,27 @@ def t(key):
 SCENARIO_TEXT = {
   "❌ Bad — No reheat (RT blast)": (
       "No reheat, room-temperature blast", "再加熱なし（室温の強風冷却）",
-      "Room-temperature air only, with no reheat. Biot about 0.9, so sink marks and "
-      "cracks are severe.",
-      "室温の空気のみで再加熱なし。ビオ数は約0.9で、ヒケと亀裂が顕著です。"),
+      "Room-temperature air only, with no reheat. Biot about 0.9: the skin sets fast over a "
+      "liquid core, so sink marks and cracks are expected.",
+      "室温の空気のみで再加熱なし。ビオ数は約0.9で、液体の内部の上に表皮が速く固まるため、"
+      "ヒケと亀裂が予想されます。"),
   "⚠️ Client current — 40 min total": (
-      "Current line, 40 min", "現行ライン（40分）",
-      "Today's line: 30 min at room temperature, then 10 min reheat. 40 min in total, "
-      "which is too slow.",
-      "現行ライン：室温で30分、その後10分の再加熱。合計40分で時間がかかりすぎます。"),
+      "Current line, 30 + 10 min", "現行ライン（30分＋10分）",
+      "Today's line: 30 min at room temperature, then 10 min of reheat. With the final cooling "
+      "to the exit, the model gives 42 min, 12 over the target.",
+      "現行ライン：室温で30分、その後10分の再加熱。出口までの最終冷却を含めると、モデル上は"
+      "42分で、目標を12分超えます。"),
   "✅ Target — Step cool + reheat (30 min)": (
       "Target: stepped cooling and reheat", "目標：段階冷却と再加熱",
-      "Three cooling steps over 20 min, then 10 min reheat. 30 min in total.",
-      "20分で3段階に冷却し、その後10分再加熱。合計30分。"),
+      "Three cooling steps over 20 min, then 10 min of reheat. With the final cooling to the "
+      "exit, the model gives 32 min, 2 over the target.",
+      "20分で3段階に冷却し、その後10分再加熱。出口までの最終冷却を含めると、モデル上は32分で、"
+      "目標を2分超えます。"),
   "🚀 DRL Optimal (v4)": (
       "DRL optimum (v4)", "DRL最適（v4）",
-      "Four cooling steps over 17 min, then 10 min reheat. 27 min in total, and safe.",
-      "17分で4段階に冷却し、その後10分再加熱。合計27分で安全です。"),
+      "Four cooling steps over 17 min, then 10 min of reheat. With the final cooling, the model "
+      "gives 30 min, and the top stays safe.",
+      "17分で4段階に冷却し、その後10分再加熱。最終冷却を含めモデル上は30分で、天面は安全です。"),
   "🏭 CBIC actual — Cool + simultaneous top reheat": (
       "CBIC trial: top reheat during cooling", "CBIC試験：冷却中の上面再加熱",
       "From CBIC's trial: the core cools in cold air while only the top surface is "
@@ -2246,10 +2252,19 @@ SITE_TR = {
     "cs_need_reheat": ("With this top reheat kept, cooling alone cannot get below 0.25. Allow the top "
                        "reheat to change in step f."),
     "no_reheat": "No reheat in this recipe. Add top reheat in step d to heal the surface.",
-    "rec_warning": ("Sink marks are likely on the top surface (peak damage index {di:.3f}). "
+    "rec_warning": ("Sink marks and cracks are expected on the top surface (peak damage index {di:.3f}). "
                     "Lower the cooling air h to 6 W/m²K or less, hold the first zone at "
                     "70–75 °C, and raise the hot air to 90–100 °C. Optimise, in step f, can "
                     "search this for you."),
+    # Hot air during cooling keeps the damage from forming: shown against the same cooling without it
+    "ro_prevent": "Prevented by reheat", "st_without": "{d:.3f} without it",
+    "sf_crack_early": ("The stick at its most damaged moment, without and with the top reheat. Cracks are "
+                       "drawn only where the damage index reaches 0.25."),
+    "s_without": "Without top reheat", "s_with": "With top reheat",
+    "s_prevent_note": "The top reheat keeps the peak at {a:.3f} instead of {b:.3f}: {p}% less damage.",
+    "s_prevent_small": ("The top reheat barely changes the peak here. Try hotter air, or bursts spread over "
+                        "the first minutes of cooling."),
+    "rh_without": "Peak without top reheat", "rh_prevent": "Damage prevented",
   },
   "ja": {
     "s_loading": "ラインを冷却中", "s_menu": "メニュー",
@@ -2306,9 +2321,17 @@ SITE_TR = {
     "cs_scope": "最適化の設定：{s}。レシピの手順fで変更できます。",
     "cs_need_reheat": "この上面再加熱のままでは、冷却だけで0.25未満にできません。手順fで再加熱の変更を許可してください。",
     "no_reheat": "この条件には再加熱がありません。手順dで上面の再加熱を加えると表面が回復します。",
-    "rec_warning": ("天面にヒケが出る可能性が高いです（最大損傷指数 {di:.3f}）。冷却空気 h を"
+    "rec_warning": ("天面にヒケと亀裂が予想されます（最大損傷指数 {di:.3f}）。冷却空気 h を"
                     "6 W/m²K以下にし、第1ゾーンを70〜75 ℃に保ち、熱風を90〜100 ℃に上げて"
                     "ください。手順fの最適化で自動探索もできます。"),
+    "ro_prevent": "再加熱で抑えた損傷", "st_without": "再加熱なしで {d:.3f}",
+    "sf_crack_early": ("上面再加熱なしの場合とありの場合で、それぞれ最も損傷が大きい時点のスティックです。"
+                       "亀裂は損傷指数が0.25に達した部分にのみ描画されます。"),
+    "s_without": "上面再加熱なし", "s_with": "上面再加熱あり",
+    "s_prevent_note": "上面再加熱により、最大損傷指数は{b:.3f}から{a:.3f}に下がります（{p}%減）。",
+    "s_prevent_small": ("この条件では、上面再加熱による最大損傷指数の低下はわずかです。熱風温度を上げるか、"
+                        "冷却初期にバーストを分散させてください。"),
+    "rh_without": "上面再加熱なしの最大値", "rh_prevent": "抑えた損傷",
   },
 }
 assert set(SITE_TR["en"]) == set(SITE_TR["ja"]), "SITE_TR: English and Japanese keys differ"
@@ -2373,10 +2396,18 @@ def _site_ctx(rc):
     ts = build_timeline(rc["T_fill"], rc["zones"], rc["reheat"], rc["h_cool"], rc["h_reheat"], n_pts=120,
                         melt=rc["melt"], late_cool_T=rc["late"])
     pk = float(max(ts["DI"]))
-    return {"DI_peak": pk, "DI_final": float(ts["DI"][-1]), "DI_healed": _heal(ts), "t_total": ts["t_total"],
-            "Bi": rc["h_cool"] * R_M / K_TH, "T_reheat": rc["reheat"]["T"], "t_reheat": ts["t_reheat"],
-            "h_cool": rc["h_cool"], "n_zones": len(rc["zones"]), "T_fill": rc["T_fill"], "risk": _rlbl(pk),
-            "scenario": rc["scenario"], "zones": rc["zones"]}
+    mode = ts["reheat_mode"] if float(ts["t_reheat"]) > 0 else "none"
+    ctx = {"DI_peak": pk, "DI_final": float(ts["DI"][-1]), "DI_healed": _heal(ts), "t_total": ts["t_total"],
+           "Bi": rc["h_cool"] * R_M / K_TH, "T_reheat": rc["reheat"]["T"], "t_reheat": ts["t_reheat"],
+           "reheat_mode": mode, "h_cool": rc["h_cool"], "n_zones": len(rc["zones"]), "T_fill": rc["T_fill"],
+           "risk": _rlbl(pk), "scenario": rc["scenario"], "zones": rc["zones"]}
+    if mode in ("simultaneous", "pulsed"):     # hot air during cooling keeps damage from forming: the same cooling without it
+        bare = build_timeline(rc["T_fill"], rc["zones"], {"T": rc["reheat"]["T"], "duration": 0.0, "mode": "sequential"},
+                              rc["h_cool"], rc["h_reheat"], n_pts=120, melt=rc["melt"], late_cool_T=rc["late"])
+        ctx["DI_peak_no_reheat"] = float(max(bare["DI"]))
+    if mode == "pulsed":
+        ctx["bursts"] = f'{int(ts["n_pulse"])} x {float(ts["pulse_sec"]):.0f} s'
+    return ctx
 
 def _on_site():
     """A request from the page: ask, analyse or clear. It runs before the

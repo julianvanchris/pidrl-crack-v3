@@ -13,7 +13,15 @@ the Oddech and Lab Seminar sites:
 - The physics runs in the browser (`components/site/engine.js`), ported line by line from `build_timeline` and
   `optimise`. `python tools/check_engine.py` (needs Node) runs both on every preset and the optimiser, and fails if
   they disagree.
+- The top reheat is judged by its timing. After cooling, the hot air heals damage that has already formed, so the
+  site shows the drop across it ("Healed by reheat"). During cooling (the top only, or pulsed bursts, as on CBIC's
+  line) it comes first and keeps the damage from forming, so the site runs the same cooling without it and shows
+  the difference ("Prevented by reheat"), in the read-outs, the Surface section and the report.
+- The optimiser scores candidates on a coarser timeline (80 points); every result it reports is recomputed on the
+  page's own 120-point timeline, so the numbers match the outlook.
 - The advisor still runs in Python: the page sends each question as the component value, and `_on_site` answers it.
+  In production it uses Groq (`openai/gpt-oss-120b`, falling back to `openai/gpt-oss-20b`); its context names the
+  reheat timing and, for reheat during cooling, the peak without it.
 - The dashboard described below opens only with `?debug=1`, for developers: it holds the advisor's training tools.
 - The page scrolls in its own container (`#scroller`), because Streamlit gives component frames `scrolling="no"`.
 
