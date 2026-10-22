@@ -565,11 +565,12 @@
     const ia = has ? ie : n - 1, DIb = ts.DI[ib], DIa = ts.DI[ia], drop = DIb - DIa;
     $("#surf").innerHTML = card(t("before_reheat"), ts.times[ib], DIb) + card(has ? t("after_reheat") : t("end_cycle"), ts.times[ia], DIa);
     let note;
-    if (drop > 0.005) {
+    if (!has) note = esc(t("no_reheat"));                  // no hot air: nothing to credit a small natural drop to
+    else if (drop > 0.005) {
       const eff = Math.trunc(drop / Math.max(DIb, 0.01) * 100);
       note = `<b>${esc(t("healing_eff"))} ${eff}%.</b> ${esc(hotEnd(ts) >= ts.mushy[0] ? t("optimal_healing") : t("softening_only"))}` +
         (DIa < 0.25 && DIb >= 0.25 ? ` <span class="ok">${esc(t("crack_free"))}</span>` : "");
-    } else note = esc(has ? t("min_healing") : t("no_reheat"));
+    } else note = esc(t("min_healing"));
     $("#surfNote").innerHTML = note;
   }
 
