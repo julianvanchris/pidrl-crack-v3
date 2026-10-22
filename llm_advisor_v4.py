@@ -65,7 +65,7 @@ except ImportError:
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 OLLAMA_URL    = os.environ.get("OLLAMA_URL",    "http://localhost:11434")
-GROQ_MODEL_DEFAULT = "llama-3.3-70b-versatile"   # strong free model on Groq
+GROQ_MODEL_DEFAULT = "openai/gpt-oss-120b"   # Groq retired the Llama 3.x models on 16 Aug 2026
 MODEL_NAME    = os.environ.get("PIDRL_MODEL",   "pidrl-advisor")
 FALLBACK_MODEL= os.environ.get("PIDRL_FALLBACK","mistral")
 KB_PATH       = "knowledge_base_v4.json"
@@ -695,8 +695,16 @@ class GroqEngine:
 
     # Tried in order — Groq periodically retires model names, so if the
     # configured one is decommissioned we transparently fall to the next.
-    FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant",
-                       "llama-3.1-70b-versatile", "llama3-70b-8192"]
+    # (Groq's recommended replacements, https://console.groq.com/docs/deprecations)
+    FALLBACK_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+
+    @staticmethod
+    def _limits(m: str, max_tokens: int) -> dict:
+        """gpt-oss models reason before they answer, and the reasoning counts
+        against max_tokens: keep it brief and leave room for the answer."""
+        if m.startswith("openai/gpt-oss"):
+            return {"max_tokens": max_tokens + 1000, "extra_body": {"reasoning_effort": "low"}}
+        return {"max_tokens": max_tokens}
 
     def __init__(self, api_key: str, model: str = GROQ_MODEL_DEFAULT):
         self.model  = model
@@ -724,8 +732,8 @@ class GroqEngine:
             try:
                 resp = self.client.chat.completions.create(
                     model=m, messages=self._messages(system, messages),
-                    temperature=temperature, max_tokens=max_tokens, top_p=0.9,
-                    stream=True,
+                    temperature=temperature, top_p=0.9, stream=True,
+                    **self._limits(m, max_tokens),
                 )
             except Exception as e:
                 last_exc = e; self.last_error = f"{m}: {e}"
@@ -753,8 +761,8 @@ class GroqEngine:
                 resp = self.client.chat.completions.create(
                     model=m, messages=[{"role": "system", "content": system},
                                        {"role": "user", "content": prompt}],
-                    temperature=temperature, max_tokens=max_tokens, top_p=0.9,
-                    stream=False,
+                    temperature=temperature, top_p=0.9, stream=False,
+                    **self._limits(m, max_tokens),
                 )
                 self.model = m; self.last_error = ""
                 return (resp.choices[0].message.content or "").strip()

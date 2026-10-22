@@ -3105,7 +3105,7 @@ hr{border-color:var(--hair)!important}
                         f"⚠️ **Groq is configured but the call failed** — answers are "
                         f"falling back to rule-based.\n\n**Reason:** `{_detail}`\n\n"
                         "Fix: check the API key is valid, or set a current model via the "
-                        "`GROQ_MODEL` secret (e.g. `llama-3.1-8b-instant`).")
+                        "`GROQ_MODEL` secret (e.g. `openai/gpt-oss-20b`).")
                     if st.button("🔄 Recheck Groq", key="groq_recheck"):
                         st.session_state.pop("groq_ping", None); st.rerun()
             elif _admin and not st_info["ollama_up"]:
