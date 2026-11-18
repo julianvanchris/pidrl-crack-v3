@@ -364,6 +364,38 @@ html[lang="ja"] .rec p { font-size: clamp(22px, 2.3vw, 32px); line-height: 1.5; 
   .zbar { height: 54px; } .zb b { font-size: 17px; } .stand { font-size: 16.5px; }
 }
 
+/* ---------------------------------------------------------------- keep fixed (step f) and opening a saved recipe */
+/* A chip per setting and a cell per zone value; pressed means the optimiser keeps it. Controls it keeps carry a small lock. */
+.fx { margin: 0 0 22px; }
+.fx-k { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; }
+.fx-k b { font: 600 14px var(--sans); } .fx-k span { font-size: 12.5px; color: var(--grey); line-height: 1.45; }
+.fx-g { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--hair); }
+.fx-g > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.fx-l { font: 500 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--grey); padding-top: 9px; }
+.fx-c { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px 7px 10px; border: 1px solid var(--hair2); border-radius: 999px;
+  font-size: 12.5px; color: var(--ink2); background: rgba(251, 250, 247, .55); transition: border-color .2s, background .2s, color .2s; }
+.fx-c b { font: 500 11.5px var(--mono); color: var(--grey); }
+.fx-c svg, .fx-v svg { width: 10px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; opacity: .35; flex: none; }
+.fx-c:hover, .fx-v:hover { border-color: var(--ink); }
+.fx-c.on, .fx-v.on { background: var(--ink); border-color: var(--ink); color: var(--paper); } .fx-c.on b { color: var(--paper); opacity: .75; }
+.fx-c.on svg, .fx-v.on svg { opacity: 1; fill: currentColor; fill-opacity: .25; }
+.fx-c:disabled { cursor: default; opacity: .78; }
+.fx-zw { border-top: 1px solid var(--hair); padding-top: 10px; overflow-x: auto; }
+.fx-zk { font-size: 12.5px; color: var(--grey); margin: 0 0 8px; }
+.fx-z { display: grid; grid-template-columns: 96px repeat(var(--n), minmax(60px, 1fr)); gap: 6px; align-items: center; min-width: min-content; }
+.fx-zh { font: 500 10.5px var(--mono); color: var(--grey); text-align: center; }
+.fx-v { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--hair2); border-radius: 9px;
+  font: 500 12px var(--mono); color: var(--ink2); background: rgba(251, 250, 247, .55); transition: border-color .2s, background .2s, color .2s; }
+.fx .note { margin-top: 10px; }
+.sl.fixed label::after, .mode.fixed b::after, .step.fixed small::after { content: ""; display: inline-block; width: 9px; height: 11px; margin-left: 6px;
+  vertical-align: -1px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 14'%3E%3Cpath d='M3.6 6.2V4.4a2.4 2.4 0 0 1 4.8 0v1.8' fill='none' stroke='black' stroke-width='1.6'/%3E%3Crect x='1.6' y='6.2' width='8.8' height='6.6' rx='1.6'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 14'%3E%3Cpath d='M3.6 6.2V4.4a2.4 2.4 0 0 1 4.8 0v1.8' fill='none' stroke='black' stroke-width='1.6'/%3E%3Crect x='1.6' y='6.2' width='8.8' height='6.6' rx='1.6'/%3E%3C/svg%3E") center / contain no-repeat; }
+.step.fixed { border-color: var(--ink2); }
+.openNote { margin: 0 0 0 6px; } .openNote.bad { color: var(--critical); }
+@media (max-width: 560px) {
+  .fx-g { grid-template-columns: 1fr; gap: 6px; } .fx-l { padding-top: 0; }
+  .fx-z { grid-template-columns: 64px repeat(var(--n), minmax(56px, 1fr)); }
+}
+
 /* ---------------------------------------------------------------- print: the report */
 @media print {
   @page { size: A4; margin: 16mm; }

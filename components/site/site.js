@@ -41,9 +41,35 @@
   const num = (v, d) => (Math.abs(v - Math.round(v)) < 1e-9 && d <= 1 ? String(Math.round(v)) : v.toFixed(d));
 
   // ---------------------------------------------------------------- state
-  const S = { r: null, scen: TARGET, dirty: false, ts: null, key: "", rev: 0, scope: "all", opt: null, best: {},
+  const S = { r: null, scen: TARGET, dirty: false, ts: null, key: "", rev: 0, fix: null, loaded: null, opt: null, best: {},
     caseOpt: {}, pend: null, anAsked: {}, chartDrawn: false, seen: {} };
   const clone = o => JSON.parse(JSON.stringify(o));
+
+  // Settings the line cannot change ("Keep fixed", step f): the optimiser leaves them as set. T and D hold one flag per zone.
+  const REH = ["mode", "rT", "rD", "hr"], FLAGS = ["n", "hc", ...REH];
+  const noFix = () => ({ n: false, T: [], D: [], hc: false, mode: false, rT: false, rD: false, hr: false });
+  function readFix(x) {                                     // from storage or a saved file; anything odd counts as free
+    const f = noFix(); if (!x || typeof x !== "object") return f;
+    FLAGS.forEach(k => { f[k] = x[k] === true; });
+    ["T", "D"].forEach(k => { f[k] = Array.isArray(x[k]) ? x[k].slice(0, 12).map(v => v === true) : []; });
+    return f;
+  }
+  function normFix() {                                     // one flag per zone; a row fixed in full stays full as zones come
+    const f = S.fix, n = S.r.zones.length;
+    for (const k of ["T", "D"]) { const a = f[k], all = a.length > 0 && a.every(Boolean); while (a.length < n) a.push(all); a.length = n; }
+    if (f.rD) f.mode = true;                               // the hot-air time belongs to its timing
+  }
+  const pinned = f => f.n || f.T.some(Boolean) || f.D.some(Boolean);
+  const scopeOf = f => (REH.every(k => f[k]) ? "cooling" : REH.some(k => f[k]) ? "custom" : "all");
+  function keptList(f) {                                   // the fixed settings, named, for the result and the cases
+    const out = [], n = f.T.length, all = a => a.length > 0 && a.every(Boolean);
+    if (pinned(f)) out.push(t("fx_n"));
+    for (const [k, whole, one] of [["T", "fx_T", "fx_zone_T"], ["D", "fx_D", "fx_zone_D"]]) {
+      if (all(f[k])) out.push(t(whole)); else f[k].forEach((on, i) => { if (on && i < n) out.push(tf(one, { n: i + 1 })); });
+    }
+    [["hc", "fx_hc"], ["mode", "fx_mode"], ["rT", "fx_rT"], ["rD", "fx_rD"], ["hr", "fx_hr"]].forEach(([k, l]) => { if (f[k]) out.push(t(l)); });
+    return out;
+  }
   function fromScenario(sc) {
     const reh = clone(sc.reheat);
     if (reh.mode === "pulsed") {
@@ -76,11 +102,12 @@
   function compute() {
     const r = S.r;
     r.zones.forEach((z, i) => { z.label = "Zone " + (i + 1); });
+    normFix();
     S.ts = E.buildTimeline(r.T_fill, r.zones, r.reheat, r.h_cool, r.h_reheat, 120, r.melt, r.late);
     S.key = JSON.stringify([r.T_fill, r.zones.map(z => [z.T, z.duration]), r.reheat, r.h_cool, r.h_reheat, r.melt, r.late]);
     S.rev++;
   }
-  function save() { store.set("pidrl.site", { lang: LANG, r: S.r, scen: S.scen, dirty: S.dirty, scope: S.scope }); }
+  function save() { store.set("pidrl.site", { lang: LANG, r: S.r, scen: S.scen, dirty: S.dirty, fix: S.fix }); }
 
   let PRE = null;                                          // the presets' timelines, computed once
   function presets() {
@@ -109,7 +136,7 @@
 
   // ---------------------------------------------------------------- loading recipes
   function loadPreset(i) {
-    S.r = fromScenario(A.scenarios[i]); S.scen = i; S.dirty = false; S.opt = null; S.best = {};
+    S.r = fromScenario(A.scenarios[i]); S.scen = i; S.dirty = false; S.opt = null; S.best = {}; S.loaded = null;
     changed({ dirty: false, rows: true }); flash($("#live .live-in"));
   }
   function applyRecipe(c) {                                // an optimiser result: cooling, air flow and its reheat
@@ -142,6 +169,7 @@
     h_cool: { l: "s_l_hc", min: 2, max: 20, step: 0.5, u: "W/m²K", get: r => r.h_cool, set: (r, v) => { r.h_cool = v; } },
     h_reh: { l: "s_l_hr", min: 5, max: 40, step: 0.5, u: "W/m²K", get: r => r.h_reheat, set: (r, v) => { r.h_reheat = v; } },
   };
+  const SL_FIX = { h_cool: "hc", reh_T: "rT", reh_D: "rD", pn: "rD", ps: "rD", pw: "rD", h_reh: "hr" };
   const unit = u => (u === "min" ? t("min") : u === "s" ? t("s_sec") : u);
   const tCool = () => S.r.zones.reduce((s, z) => s + z.duration, 0);
   function pattern(k, v) {                                 // a pattern slider moved: spread the bursts evenly again
@@ -162,6 +190,7 @@
     const k = el.dataset.key, s = SL[k], inp = $("input", el), v = +s.get(S.r);
     const l = typeof s.l === "function" ? s.l(S.r) : s.l, h = typeof s.h === "function" ? s.h(S.r) : s.h;
     $("label", el).textContent = t(l);
+    el.classList.toggle("fixed", !!(SL_FIX[k] && S.fix[SL_FIX[k]]));   // a lock mark: the optimiser keeps it
     if (h) el.title = t(h); else el.removeAttribute("title");
     if (document.activeElement !== inp) inp.value = v;
     inp.style.setProperty("--p", ((v - s.min) / (s.max - s.min) * 100).toFixed(1) + "%");
@@ -210,12 +239,14 @@
     }
     $$("#zrows .zr").forEach((row, i) => {
       const z = r.zones[i]; $("b i", row).style.background = CH.heat(z.T);
-      $$(".step", row).forEach(stp => { const inp = $("input", stp); if (document.activeElement !== inp) inp.value = stp.dataset.f === "T" ? num(z.T, 1) : num(z.duration, 1); });
+      $$(".step", row).forEach(stp => { const inp = $("input", stp), isT = stp.dataset.f === "T"; if (document.activeElement !== inp) inp.value = isT ? num(z.T, 1) : num(z.duration, 1);
+        stp.classList.toggle("fixed", !!S.fix[isT ? "T" : "D"][i]); });
       $(".x", row).disabled = r.zones.length <= 1;
     });
     if (pul) $$("#brows .zr").forEach((row, i) => {
       const b = reh.bursts[i];
-      $$(".step", row).forEach(stp => { const inp = $("input", stp); if (document.activeElement !== inp) inp.value = stp.dataset.f === "bs" ? (+b[0]).toFixed(2) : String(b[1]); });
+      $$(".step", row).forEach(stp => { const inp = $("input", stp); if (document.activeElement !== inp) inp.value = stp.dataset.f === "bs" ? (+b[0]).toFixed(2) : String(b[1]);
+        stp.classList.toggle("fixed", S.fix.rD); });
       $(".x", row).disabled = reh.bursts.length <= 1;
     });
   }
@@ -244,7 +275,7 @@
       } else if (btn.classList.contains("x")) {
         if (btn.dataset.b != null) {
           if (r.reheat.bursts.length > 1) { r.reheat.bursts.splice(+btn.dataset.b, 1); r.reheat.custom = true; E.syncPattern(r.reheat); changed({ rows: true }); }
-        } else if (r.zones.length > 1) { r.zones.splice(+btn.dataset.i, 1); changed({ rows: true }); }
+        } else if (r.zones.length > 1) { const i = +btn.dataset.i; r.zones.splice(i, 1); S.fix.T.splice(i, 1); S.fix.D.splice(i, 1); changed({ rows: true }); }
       }
     };
     const onChange = e => {
@@ -259,7 +290,7 @@
       if (z.length >= 8) return;
       z.push({ T: Math.max(20, last - 8), duration: 5, label: "" }); changed({ rows: true });
     });
-    $("#zReset").addEventListener("click", () => { S.r.zones = clone(A.scenarios[TARGET].zones); changed({ rows: true }); });
+    $("#zReset").addEventListener("click", () => { S.r.zones = clone(A.scenarios[TARGET].zones); S.fix.T = []; S.fix.D = []; changed({ rows: true }); });
     $("#bAdd").addEventListener("click", () => {
       const b = S.r.reheat.bursts; if (b.length >= 12) return;
       const d = b[b.length - 1][1]; b.push([E.nextBurst(b, tCool(), d), d]); S.r.reheat.custom = true; E.syncPattern(S.r.reheat); changed({ rows: true });
@@ -298,14 +329,16 @@
         `<i style="color:${col}">${esc(t("cat_" + o.cat))}</i><b>${esc(o.name)}</b><em style="color:${CH.rcol(o.peak)}">${o.peak.toFixed(2)}</em>` +
         `<s style="background:linear-gradient(90deg,${strip})"></s></button>`;
     }).join("");
-    const sc = A.scenarios[S.scen];
-    $("#preNote").innerHTML = esc(scDesc(sc)) + (S.dirty ? ` <span class="ed">${esc(t("s_edited"))}</span>` : "");
+    const sc = A.scenarios[S.scen], L = S.loaded;
+    $("#preNote").innerHTML = L ? `<span class="ed">${esc(L.d ? tf("s_opened", { f: L.f, d: L.d }) : tf("s_opened_nd", { f: L.f }))}</span>` +
+        (L.adj ? " " + esc(t("s_open_adj")) : "")
+      : esc(scDesc(sc)) + (S.dirty ? ` <span class="ed">${esc(t("s_edited"))}</span>` : "");
     // b to e: sliders, zones, reheat
     $$(".sl[data-key]").forEach(syncSlider);
     renderRows(); renderZbar();
     $$("#modes .mode").forEach(b => {
       const m = b.dataset.m, on = m === mode;
-      b.classList.toggle("on", on); b.setAttribute("aria-pressed", on);
+      b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); b.classList.toggle("fixed", on && S.fix.mode);
       $("b", b).textContent = t({ sequential: "reheat_seq", simultaneous: "reheat_sim", pulsed: "reheat_pulsed" }[m]);
       $("span", b).textContent = t({ sequential: "s_mseq_d", simultaneous: "s_msim_d", pulsed: "s_mpul_d" }[m]);
     });
@@ -323,31 +356,70 @@
     }
     $("#rehNote").textContent = note;
     $("#meltNote").textContent = tf("mushy_note", { lo: r.melt - 5, hi: r.melt + 5 });
-    // f: the optimiser
-    $("#scope").innerHTML = ["cooling", "all"].map(s => `<button type="button" data-s="${s}" class="${S.scope === s ? "on" : ""}" aria-pressed="${S.scope === s}">${esc(t("opt_scope_" + s))}</button>`).join("");
-    const o = S.opt;
+    // f: the optimiser, and what it must keep
+    const sco = scopeOf(S.fix);
+    $("#scope").innerHTML = ["cooling", "all"].map(s => `<button type="button" data-s="${s}" class="${sco === s ? "on" : ""}" aria-pressed="${sco === s}">${esc(t("opt_scope_" + s))}</button>`).join("");
+    renderFix();
+    const o = S.opt, kl = o && o.fix ? keptList(o.fix) : [], kept = kl.length ? `<p class="note">${esc(tf("fx_kept", { list: kl.join(LANG === "ja" ? "、" : ", ") }))}</p>` : "";
     if (!o) $("#optRes").innerHTML = "";
-    else if (o.none) $("#optRes").innerHTML = `<p class="note">${esc(t("drl_na"))}</p>`;
-    else $("#optRes").innerHTML = `<p class="opt-done">${esc(tf("drl_done", { mode: t(MODE_KEY[o.mode]), di: o.di, t: o.t }))}</p>` +
+    else if (o.none) $("#optRes").innerHTML = `<p class="note">${esc(t(kl.length ? "drl_na_fix" : "drl_na"))}</p>`;
+    else $("#optRes").innerHTML = `<p class="opt-done">${esc(tf(o.same ? "drl_same" : "drl_done", { mode: t(MODE_KEY[o.mode]), di: o.di, t: o.t }))}</p>` + kept +
       `<table class="opt-tbl"><thead><tr><th>${esc(t("drl_compare"))}</th><th>${esc(t("s_col_di"))}</th><th>${esc(t("s_col_cycle"))}</th></tr></thead><tbody>` +
       Object.entries(o.best).sort((a, b) => a[1].di - b[1].di).map(([m, b]) => `<tr class="${m === o.mode ? "cur" : ""}"><td>${esc(t(MODE_KEY[m]))}</td>` +
         `<td class="n" style="color:${CH.rcol(b.di)}">${b.di.toFixed(3)}</td><td class="n">${b.t.toFixed(0)} ${esc(t("min"))}</td></tr>`).join("") + `</tbody></table>`;
   }
+  const LOCK = `<svg viewBox="0 0 12 14" aria-hidden="true"><path d="M3.6 6.2V4.4a2.4 2.4 0 0 1 4.8 0v1.8"/><rect x="1.6" y="6.2" width="8.8" height="6.6" rx="1.6"/></svg>`;
+  function renderFix() {                                   // "Keep fixed": one chip per setting, one cell per zone value
+    const f = S.fix, r = S.r, reh = r.reheat, n = r.zones.length, nT = f.T.filter(Boolean).length, nD = f.D.filter(Boolean).length;
+    const part = c => (c === n ? t("fx_all") : c ? tf("fx_some", { k: c, n }) : t("fx_free"));
+    const chip = (k, label, val, on, dis) => `<button type="button" class="fx-c${on ? " on" : ""}" data-fx="${k}" aria-pressed="${!!on}"${dis ? " disabled" : ""}>` +
+      `${LOCK}<span>${esc(label)}</span><b>${esc(val)}</b></button>`;
+    const cell = (k, i, val, label) => `<button type="button" class="fx-v${f[k][i] ? " on" : ""}" data-fx="z${k}" data-i="${i}" aria-pressed="${!!f[k][i]}" aria-label="${esc(label)}">${LOCK}${esc(val)}</button>`;
+    const time = reh.mode === "pulsed" ? tf("fx_bursts", { n: (reh.bursts || []).length, s: Math.trunc(reh.pulse_sec || 0) }) : `${num(+reh.duration || 0, 1)} ${t("min")}`;
+    const pin = f.T.some(Boolean) || f.D.some(Boolean);
+    $("#fx").innerHTML = `<div class="fx-k"><b>${esc(t("fx_k"))}</b><span>${esc(t("fx_help"))}</span></div>` +
+      `<div class="fx-g"><span class="fx-l">${esc(t("fx_cool"))}</span><div>` +
+        chip("n", t("fx_n"), String(n), f.n || pin, pin) + chip("T", t("fx_T"), part(nT), nT === n) + chip("D", t("fx_D"), part(nD), nD === n) +
+        chip("hc", t("fx_hc"), `${num(r.h_cool, 1)} W/m²K`, f.hc) + `</div></div>` +
+      `<div class="fx-g"><span class="fx-l">${esc(t("fx_reh"))}</span><div>` +
+        chip("mode", t("fx_mode"), t(MODE_KEY[E.reheatKind(reh)]), f.mode, f.rD) + chip("rT", t("fx_rT"), `${num(+reh.T, 0)} °C`, f.rT) +
+        chip("rD", t("fx_rD"), time, f.rD) + chip("hr", t("fx_hr"), `${num(r.h_reheat, 1)} W/m²K`, f.hr) + `</div></div>` +
+      `<div class="fx-zw"><p class="fx-zk">${esc(t("fx_zones"))}</p><div class="fx-z" style="--n:${n}"><span></span>` +
+        r.zones.map((z, i) => `<span class="fx-zh">${esc(tf("zone_n", { n: i + 1 }))}</span>`).join("") +
+        `<span class="fx-l">${esc(t("fx_zT"))}</span>` + r.zones.map((z, i) => cell("T", i, `${num(z.T, 1)}°`, tf("fx_zone_T", { n: i + 1 }))).join("") +
+        `<span class="fx-l">${esc(t("fx_zD"))}</span>` + r.zones.map((z, i) => cell("D", i, `${num(z.duration, 1)}′`, tf("fx_zone_D", { n: i + 1 }))).join("") +
+      `</div></div><p class="note">${esc(tf("fx_always", { f: num(r.T_fill, 1), m: num(r.melt, 0), l: num(r.late, 0) }))}</p>`;
+  }
+  function fixChanged() { normFix(); renderControls(); renderCases(); save(); }
   function wireControls() {
     $("#presets").addEventListener("click", e => { const b = e.target.closest(".pre"); if (b) loadPreset(+b.dataset.i); });
-    $("#scope").addEventListener("click", e => { const b = e.target.closest("button[data-s]"); if (b && b.dataset.s !== S.scope) { S.scope = b.dataset.s; renderControls(); renderCases(); save(); } });
+    $("#scope").addEventListener("click", e => {          // the two shortcuts set the top reheat's four flags at once
+      const b = e.target.closest("button[data-s]"); if (!b) return;
+      const keep = b.dataset.s === "cooling"; REH.forEach(k => { S.fix[k] = keep; }); fixChanged();
+    });
+    $("#fx").addEventListener("click", e => {
+      const b = e.target.closest("button[data-fx]"); if (!b || b.disabled) return;
+      const f = S.fix, k = b.dataset.fx;
+      if (k === "T" || k === "D") { const all = f[k].length > 0 && f[k].every(Boolean); f[k] = f[k].map(() => !all); }
+      else if (k === "zT" || k === "zD") { const a = f[k.slice(1)], i = +b.dataset.i; a[i] = !a[i]; }
+      else { f[k] = !f[k]; if (k === "mode" && !f.mode) f.rD = false; }
+      fixChanged();
+    });
     $("#optBtn").addEventListener("click", () => {
       const btn = $("#optBtn"); btn.classList.add("busy"); $("#optNote").textContent = t("drl_spin");
       setTimeout(() => {
-        const r = S.r, best = E.optimise(r.T_fill, r.reheat, r.h_cool, r.h_reheat, r.melt, r.late, S.scope), kinds = Object.keys(best);
+        const r = S.r, before = JSON.stringify([r.zones.map(z => [z.T, z.duration]), r.reheat, r.h_cool, r.h_reheat]);
+        const best = E.optimise(r.T_fill, r.reheat, r.h_cool, r.h_reheat, r.melt, r.late, "all", S.fix, r.zones), kinds = Object.keys(best);
         kinds.forEach(k => atPage(best[k], r));
+        const fix = clone(S.fix);
         if (kinds.length) {
           const pick = best[E.reheatKind(r.reheat)] || kinds.map(k => best[k]).reduce((a, b) => (b.score < a.score ? b : a));
           applyRecipe(pick);
+          const same = JSON.stringify([r.zones.map(z => [z.T, z.duration]), r.reheat, r.h_cool, r.h_reheat]) === before;
           S.best = Object.fromEntries(kinds.map(k => [k, { zones: best[k].zones, reh: best[k].reh, h_cool: best[k].h_cool, h_reh: best[k].h_reh,
             T_fill: r.T_fill, melt: r.melt, late: r.late }]));
-          S.opt = { mode: pick.mode, di: pick.di, t: pick.t, best: Object.fromEntries(kinds.map(k => [k, { di: best[k].di, t: best[k].t }])) };
-        } else S.opt = { none: true };
+          S.opt = { mode: pick.mode, di: pick.di, t: pick.t, same, fix, best: Object.fromEntries(kinds.map(k => [k, { di: best[k].di, t: best[k].t }])) };
+        } else S.opt = { none: true, fix };
         btn.classList.remove("busy"); $("#optNote").textContent = "";
         changed({ rows: true }); flash($("#live .live-in"));
       }, 40);
@@ -480,7 +552,9 @@
     const mine = Math.max(...ts.DI), ok = mine < 0.25 && ts.t_total <= 30.5;
     $("#caseFigs").innerHTML = [[worst.peak, t("cat_worst")], [best.peak, t("cat_best")], [mine, tf("f_yours", { cat: t(ok ? "cat_good" : "cat_work") })]]
       .map(([v, l]) => `<div class="bn"><b style="color:${CH.rcol(v)}">${v.toFixed(3)}</b><span>${esc(l)}</span></div>`).join("");
-    $("#caseScope").textContent = tf("cs_scope", { s: t("opt_scope_" + S.scope) });
+    const sco = scopeOf(S.fix), nk = keptList(caseFix(A.scenarios[0])).length;
+    $("#caseScope").textContent = tf("cs_scope", { s: sco === "custom" ? tf("fx_count", { n: nk }) : t("opt_scope_" + sco) +
+      (nk > (sco === "cooling" ? REH.length : 0) ? (LANG === "ja" ? "、" : ", ") + tf("fx_count", { n: nk - (sco === "cooling" ? REH.length : 0) }) : "") });
     $("#caseAll").textContent = t("cs_opt_all");
     const col = { worst: RISK.CRITICAL, work: RISK.CAUTION, good: RISK.SAFE, best: RISK.SAFE };
     $("#caseCols").innerHTML = ["worst", "work", "good", "best"].map(cat => {
@@ -490,19 +564,24 @@
     }).join("");
   }
   function caseCard(o) {
-    const r = S.caseOpt[o.id + "|" + S.scope], c = CH.rcol(o.peak), cur = o.i === S.scen && !S.dirty;
+    const r = S.caseOpt[caseKey(o.sc)], c = CH.rcol(o.peak), cur = o.i === S.scen && !S.dirty;
     let opt = "";
     if (r) opt = `<div class="opt"><span>${esc(t("cs_optimised"))}</span><b style="color:${c}">${o.peak.toFixed(3)}</b><span>→</span>` +
       `<b style="color:${CH.rcol(r.di)}">${r.di.toFixed(3)}</b><em>${esc(tf("cs_cycle", { t: r.t }))}, ${esc(t(MODE_KEY[r.mode]))}</em></div>` +
-      (S.scope === "cooling" && r.di >= 0.25 ? `<p class="cs-note">${esc(t("cs_need_reheat"))}</p>` : "");
+      (REH.some(k => S.fix[k]) && r.di >= 0.25 ? `<p class="cs-note">${esc(t("cs_need_reheat"))}</p>` : "");
     return `<article class="case${cur ? " cur" : ""}"><div class="case-t">${CH.glyph(o.peak, o.seed)}<div><b>${esc(o.name)}</b>` +
       `<span><strong style="color:${c}">${o.peak.toFixed(3)}</strong>${esc(tf("cs_cycle", { t: o.cycle }))}${cur ? ` · ${esc(t("s_loaded"))}` : ""}</span></div></div>` +
       `<p>${esc(why(o))}</p>${opt}<div class="btns"><button class="btn ghost sm" data-load="${o.i}">${esc(t("cs_load"))}</button>` +
       (r ? `<button class="btn solid sm" data-lopt="${o.i}">${esc(t("cs_load_opt"))}</button>` : `<button class="btn ghost sm" data-opt="${o.i}">${esc(t("cs_opt"))}</button>`) + `</div></article>`;
   }
+  function caseFix(sc) {                                  // the line's fixed settings, on a case's own values: single zones do not carry over
+    const f = S.fix, n = sc.zones.length, all = a => a.length > 0 && a.every(Boolean);
+    return { n: f.n || all(f.T) || all(f.D), T: Array(n).fill(all(f.T)), D: Array(n).fill(all(f.D)), hc: f.hc, mode: f.mode, rT: f.rT, rD: f.rD, hr: f.hr };
+  }
+  const caseKey = sc => sc.id + "|" + JSON.stringify(caseFix(sc));
   function caseOpt(i) {
-    const sc = A.scenarios[i], best = E.optimise(sc.T_fill, sc.reheat, sc.h_cool, sc.h_reheat, sc.melt, sc.late, S.scope), v = Object.values(best);
-    S.caseOpt[sc.id + "|" + S.scope] = v.length ? atPage(v.reduce((a, b) => (b.score < a.score ? b : a)), sc) : null;
+    const sc = A.scenarios[i], best = E.optimise(sc.T_fill, sc.reheat, sc.h_cool, sc.h_reheat, sc.melt, sc.late, "all", caseFix(sc), sc.zones), v = Object.values(best);
+    S.caseOpt[caseKey(sc)] = v.length ? atPage(v.reduce((a, b) => (b.score < a.score ? b : a)), sc) : null;
   }
   function wireCases() {
     $("#caseCols").addEventListener("click", e => {
@@ -510,7 +589,7 @@
       if (b.dataset.load != null) { loadPreset(+b.dataset.load); go("recipe"); }
       else if (b.dataset.opt != null) { b.classList.add("busy"); b.textContent = t("drl_spin"); setTimeout(() => { caseOpt(+b.dataset.opt); renderCases(); }, 30); }
       else if (b.dataset.lopt != null) {
-        const i = +b.dataset.lopt, r = S.caseOpt[A.scenarios[i].id + "|" + S.scope];
+        const i = +b.dataset.lopt, r = S.caseOpt[caseKey(A.scenarios[i])];
         loadPreset(i); if (r) { applyRecipe(r); changed({ rows: true }); } go("recipe");
       }
     });
@@ -602,17 +681,67 @@
       $("#rehDl").innerHTML = `<dl class="rp-dl">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
     }
   }
+  // The saved file names its fixed settings in words; FIX_FILE maps them to the page's flags and back.
+  const FIX_FILE = { n: "zone_count", T: "zone_temperature", D: "zone_time", hc: "cooling_air_flow", mode: "reheat_timing",
+    rT: "hot_air_temperature", rD: "hot_air_time_or_bursts", hr: "reheat_air_flow" };
   function download() {
-    const ts = S.ts, r = S.r, DI = Math.max(...ts.DI);
-    const out = { product: "LCWT401 deodorant stick", model: "PI-DRL v5", made: new Date().toISOString().slice(0, 10),
+    const ts = S.ts, r = S.r, DI = Math.max(...ts.DI), made = new Date().toISOString().slice(0, 10);
+    const out = { product: "LCWT401 deodorant stick", model: "PI-DRL v5", made,
       starting_point: A.scenarios[S.scen].name.en + (S.dirty ? " (edited)" : ""),
+      how_to_open: "PI-DRL site, Recipe, step a: 'Open a saved recipe', or drop this file on the page.",
       recipe: { T_fill: r.T_fill, zones: r.zones.map(z => ({ T: z.T, duration: z.duration })), reheat: r.reheat, h_cool: r.h_cool, h_reheat: r.h_reheat, melt: r.melt, late_cool_T: r.late },
+      kept_fixed_when_optimising: Object.fromEntries(Object.entries(FIX_FILE).map(([k, name]) => [name, S.fix[k]])),
       result: { peak_damage_index: +DI.toFixed(4), final_damage_index: +ts.DI[ts.DI.length - 1].toFixed(4), cycle_min: +ts.t_total.toFixed(2),
         risk: CH.riskOf(DI), biot: +(r.h_cool * E.C.R_M / E.C.K_TH).toFixed(3) } };
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: "application/json" }));
-    a.download = "pidrl_recipe.json"; document.body.appendChild(a); a.click();
+    a.download = `pidrl_recipe_${made}.json`; document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  // ---------------------------------------------------------------- opening a saved recipe (the file above, or a bare recipe)
+  function readRecipe(o) {                                 // null if it is not a recipe; values out of range are brought in
+    const src = o && typeof o === "object" && o.recipe && typeof o.recipe === "object" ? o.recipe : o;
+    if (!src || typeof src !== "object" || !Array.isArray(src.zones) || !src.zones.length || !src.reheat || typeof src.reheat !== "object") return null;
+    let adj = false;
+    const n0 = (v, d) => (v == null || v === "" ? d : Number(v));
+    const lim = (v, lo, hi) => { const w = clamp(v, lo, hi); if (isFinite(v) && w !== v) adj = true; return w; };
+    const sl = (k, v) => lim(v, SL[k].min, SL[k].max);
+    const T_fill = sl("T_fill", n0(src.T_fill, NaN));
+    if (src.zones.length > 8) adj = true;
+    const zones = src.zones.slice(0, 8).map((z, i) => ({ T: lim(n0(z && z.T, NaN), LIM.T[0], T_fill - 1), duration: lim(n0(z && z.duration, NaN), LIM.duration[0], LIM.duration[1]), label: "Zone " + (i + 1) }));
+    const s0 = src.reheat, mode = ["sequential", "simultaneous", "pulsed"].includes(s0.mode) ? s0.mode : "sequential";
+    const reh = { T: sl("reh_T", n0(s0.T, NaN)), duration: mode === "pulsed" ? 0 : sl("reh_D", n0(s0.duration, 0)), mode };
+    const late = sl("late", n0(src.late_cool_T ?? src.late, E.C.T_ROOM));
+    const r = { T_fill, zones, reheat: reh, h_cool: sl("h_cool", n0(src.h_cool, NaN)), h_reheat: sl("h_reh", n0(src.h_reheat ?? src.h_reh, 12)),
+      melt: sl("melt", n0(src.melt, E.C.T_MID)), late };
+    if (mode === "pulsed") {
+      const tc = zones.reduce((s, z) => s + z.duration, 0);
+      reh.pulses = Math.trunc(sl("pn", n0(s0.pulses, 5))); reh.pulse_sec = sl("ps", n0(s0.pulse_sec, 20)); reh.pulse_window = sl("pw", n0(s0.pulse_window, 6));
+      const b = Array.isArray(s0.bursts) ? s0.bursts.filter(x => Array.isArray(x) && isFinite(x[0]) && isFinite(x[1])) : [];
+      if (b.length > 12) adj = true;
+      reh.bursts = b.slice(0, 12).map(([st, d]) => [E.rnd(lim(+st, 0, tc), 3), Math.trunc(lim(+d, LIM.bd[0], LIM.bd[1]))]).sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+      if (!reh.bursts.length) reh.bursts = E.evenBursts(reh.pulses, reh.pulse_sec, Math.min(reh.pulse_window, tc));
+      if (s0.custom === true) reh.custom = true;
+    }
+    if (!valid(r) || !zones.every(z => isFinite(z.T) && isFinite(z.duration))) return null;
+    const fx = o.kept_fixed_when_optimising, fix = fx && typeof fx === "object"
+      ? readFix(Object.fromEntries(Object.entries(FIX_FILE).map(([k, name]) => [k, fx[name]]))) : null;
+    return { r, adj, fix };
+  }
+  function openNote(msg) { $$(".openNote").forEach(el => { el.textContent = msg || t("s_open_hint"); el.classList.toggle("bad", !!msg); }); }
+  async function openFile(file) {
+    if (!file) return;
+    let o = null;
+    try { o = file.size < 2e6 ? JSON.parse(await file.text()) : null; } catch (e) { o = null; }
+    const got = o && readRecipe(o);
+    if (!got) { openNote(tf("s_open_bad", { f: file.name })); return; }
+    S.r = got.r; S.dirty = true; S.opt = null; S.best = {};
+    if (got.fix) S.fix = got.fix;
+    const sp = String(o.starting_point || "").replace(/ \(edited\)$/, ""), si = A.scenarios.findIndex(sc => sc.name.en === sp);
+    if (si >= 0) S.scen = si;
+    S.loaded = { f: file.name, d: /^\d{4}-\d{2}-\d{2}$/.test(String(o.made || "")) ? o.made : "", adj: got.adj };
+    openNote(""); changed({ rows: true }); go("recipe"); flash($("#live .live-in"));
   }
 
   // ---------------------------------------------------------------- 07 advisor (the LLM runs in Python)
@@ -713,7 +842,7 @@
     $$("[data-th]").forEach(el => { el.innerHTML = t(el.dataset.th); });
     $$(".lang button").forEach(b => { const on = b.dataset.lang === LANG; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
     $("#xrPlay").textContent = xrPlay ? t("pause") : t("play");
-    buildIndex(); rowsSig = "";
+    buildIndex(); rowsSig = ""; openNote("");
   }
   function setLang(l) { if (l === LANG) return; LANG = l; applyLang(); renderAll(); renderAdvisor(); save(); }
 
@@ -751,6 +880,11 @@
     $("#menuBtn").addEventListener("click", () => document.body.classList.toggle("menu-open"));
     $("#printBtn").addEventListener("click", () => window.print());
     $("#jsonBtn").addEventListener("click", download);
+    const fileIn = $("#openFile");                         // open a saved recipe: the buttons, or a file dropped anywhere
+    $$(".openBtn").forEach(b => b.addEventListener("click", () => { fileIn.value = ""; fileIn.click(); }));
+    fileIn.addEventListener("change", () => openFile(fileIn.files[0]));
+    document.addEventListener("dragover", e => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) e.preventDefault(); });
+    document.addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) { e.preventDefault(); openFile(f); } });
     $("#xrPlay").addEventListener("click", () => {
       xrPlay = !xrPlay; $("#xrPlay").textContent = xrPlay ? t("pause") : t("play"); $("#xrPlay").setAttribute("aria-pressed", String(!xrPlay));
       if (xrPlay) { xrT0 = performance.now(); xrKick(); } else xrFrame(performance.now());
@@ -818,7 +952,8 @@
     CH.setStops(A.heat);
     const saved = store.get("pidrl.site") || {};
     LANG = saved.lang === "ja" || saved.lang === "en" ? saved.lang : (A.lang === "ja" ? "ja" : "en");
-    S.scope = saved.scope === "cooling" ? "cooling" : "all";
+    S.fix = readFix(saved.fix);
+    if (!saved.fix && saved.scope === "cooling") REH.forEach(k => { S.fix[k] = true; });   // storage from before Keep fixed
     if (valid(saved.r) && saved.scen >= 0 && saved.scen < A.scenarios.length) { S.r = saved.r; S.scen = saved.scen; S.dirty = !!saved.dirty; }
     else S.r = fromScenario(A.scenarios[TARGET]);
     XR = CH.Xray($("#xraySvg"), $("#xrField"));

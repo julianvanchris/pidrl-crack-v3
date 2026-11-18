@@ -98,6 +98,7 @@
           <div class="ctl-h"><b class="ctl-n">a</b><span data-t="step_start">Starting point</span></div>
           <div class="presets" id="presets"></div>
           <p class="note" id="preNote"></p>
+          <div class="row-btns"><button type="button" class="btn ghost sm openBtn" data-t="s_open">Open a saved recipe</button><span class="note openNote"></span></div>
         </div>
         <div class="ctl" data-reveal>
           <div class="ctl-h"><b class="ctl-n">b</b><span data-t="step_fill">Fill</span></div>
@@ -125,6 +126,7 @@
         <div class="ctl" data-reveal>
           <div class="ctl-h"><b class="ctl-n">f</b><span data-t="drl_optimiser">Optimise</span><em data-t="drl_help"></em></div>
           <div class="seg2" id="scope"></div>
+          <div class="fx" id="fx"></div>
           <div class="opt-row"><button class="btn solid" id="optBtn" data-t="drl_run">Find the best recipe</button><span class="note" id="optNote"></span></div>
           <div class="opt-res" id="optRes"></div>
         </div>
@@ -203,7 +205,8 @@
       <div><div class="rp-k" data-t="rep_recipe">Recipe</div><div id="recipeTbl"></div>
         <div class="rp-k gap" data-t="rep_reheat">Reheat effect</div><div id="rehDl"></div></div>
     </div>
-    <div class="rep-btns" data-reveal><button class="btn solid" id="printBtn" data-t="s_print">Print or save as PDF</button><button class="btn ghost" id="jsonBtn" data-t="s_json">Download the recipe</button></div>
+    <div class="rep-btns" data-reveal><button class="btn solid" id="printBtn" data-t="s_print">Print or save as PDF</button><button class="btn ghost" id="jsonBtn" data-t="s_json">Download the recipe</button><button type="button" class="btn ghost openBtn" data-t="s_open">Open a saved recipe</button><span class="note openNote"></span></div>
+    <input type="file" id="openFile" accept=".json,application/json" hidden>
   </div>
 </section>
 

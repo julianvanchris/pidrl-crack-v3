@@ -337,7 +337,19 @@ def build_lean_system_prompt() -> str:
         "Relevant facts from experimental data will be provided with "
         "each question — use them to ground your answer. Be concise: "
         "3-6 sentences unless asked for detail. Answer in the language "
-        "of the question."
+        "of the question. "
+        # The site's own controls, so questions about the page get the real names (CBIC asked
+        # for an "Import" button the advisor had invented, Nov 2026).
+        "If asked how to use the site: 'Download the recipe' (section 06, "
+        "Report) saves the recipe as a .json file; 'Open a saved recipe' "
+        "(Recipe, step a, and under the report) loads that file back, or "
+        "the file can be dropped on the page. In step f, 'Keep fixed' marks "
+        "settings the line cannot change (number of zones, zone "
+        "temperatures or times, single zones, cooling air h, reheat "
+        "timing, hot-air temperature, reheat time or bursts, hot air h); "
+        "'Find the best recipe' then leaves them as set, and never changes "
+        "the fill temperature, melting point or late cooling air. Name no "
+        "other buttons or features."
     )
 
 

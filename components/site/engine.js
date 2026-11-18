@@ -192,30 +192,56 @@
     return temps.map((T, k) => ({ T: rnd(T, 1), duration: rnd(durs[k], 1), label: "Zone " + (k + 1) }));
   }
   const copyReh = r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, k === "bursts" && v ? v.map(b => b.slice()) : v]));
-  function optimise(Tfill, reh0, hCool0, hReh0, melt, late, scope = "all") {
-    reh0 = copyReh(reh0);
-    const cands = [[reheatKind(reh0), reh0, [+hReh0]]];
+  // Settings the line cannot change (CBIC, Nov 2026): fix = { n, T: [per zone], D: [per zone], hc, mode, rT, rD, hr }, each
+  // true when that setting must stay as it is in zones0 and reh0. A fixed zone time takes its minutes out of the budget and
+  // the free zones share the rest. Called without fix and zones0, the search is exactly the Python one (tools/check_engine.py).
+  function fitZones(plan, zones0, fix, budget) {
+    const fT = fix.T || [], fD = fix.D || [];
+    const out = plan.map((z, i) => ({ T: fT[i] ? +zones0[i].T : z.T, duration: fD[i] ? +zones0[i].duration : z.duration, label: z.label }));
+    if (!fD.some(Boolean)) return out;
+    const room = budget - sum(out.map((z, i) => (fD[i] ? z.duration : 0))), free = sum(plan.map((z, i) => (fD[i] ? 0 : z.duration)));
+    out.forEach((z, i) => { if (!fD[i] && free > 0) z.duration = rnd(Math.max(0.5, plan[i].duration * room / free), 1); });
+    return out;
+  }
+  function optimise(Tfill, reh0, hCool0, hReh0, melt, late, scope = "all", fix = null, zones0 = null) {
+    reh0 = copyReh(reh0); fix = fix || {};
+    const cur = reheatKind(reh0);
+    let cands = [[cur, reh0, [+hReh0]]];
     if (scope === "all") {
       for (const T of [65, 72, 78, 85, 92, 100, 110]) for (const m of ["sequential", "simultaneous"])
         cands.push([m, { T, duration: 10, mode: m }, [12, 18, 25]]);
       for (const T of [95, 105]) for (const np of [3, 5, 7])
         cands.push(["pulsed", { T, duration: 0, mode: "pulsed", pulses: np, pulse_sec: 20, pulse_window: 5 }, [18, 25]]);
     }
+    if (fix.mode || fix.rD || fix.rT || fix.hr) {         // the top reheat: keep what is fixed, search the rest
+      const seen = new Set();
+      cands = cands.filter(([kind]) => !((fix.mode || fix.rD) && kind !== cur)).map(([kind, reh, hRehs]) => {
+        const r = fix.rD ? Object.assign(copyReh(reh0), { T: reh.T }) : copyReh(reh);   // its time, or its bursts
+        if (fix.rT) r.T = reh0.T;
+        return [kind, r, fix.hr ? [+hReh0] : hRehs];
+      }).filter(c => { const k = JSON.stringify(c); return seen.has(k) ? false : seen.add(k); });
+    }
+    const pin = !!zones0 && (!!fix.n || (fix.T || []).some(Boolean) || (fix.D || []).some(Boolean));
     const best = {};
+    const consider = (kind, zones, reh, hC, hR) => {
+      const tt = buildTimeline(Tfill, zones, reh, hC, hR, 80, melt, late);
+      if (tt.t_total > 30.5) return;
+      const pk = Math.max(...tt.DI), score = 0.6 * pk + 0.4 * tt.DI[tt.DI.length - 1];
+      if (score < ((best[kind] && best[kind].score) ?? Infinity))
+        best[kind] = { score, di: pk, t: tt.t_total, mode: kind, zones, reh: copyReh(reh), h_cool: hC, h_reh: hR };
+    };
     for (const [kind, reh, hRehs] of cands) {
       const overlap = kind !== "sequential";
       const budget = overlap ? 27 : 30 - +(reh.duration || 0) - 3;
       const lean = kind === "pulsed";
-      for (const hR of hRehs) for (const hC of [+hCool0, Math.max(2, +hCool0 * 0.6)])
-        for (const nz of lean ? [3, 4] : [3, 4, 5]) for (const dist of lean ? ["mushy_dwell", "top_heavy"] : ["mushy_dwell", "linear", "top_heavy"]) {
+      for (const hR of hRehs) for (const hC of fix.hc ? [+hCool0] : [+hCool0, Math.max(2, +hCool0 * 0.6)])
+        for (const nz of pin ? [zones0.length] : lean ? [3, 4] : [3, 4, 5]) for (const dist of lean ? ["mushy_dwell", "top_heavy"] : ["mushy_dwell", "linear", "top_heavy"]) {
           const zones = zonePlan(Tfill, nz, dist, budget);
-          const tt = buildTimeline(Tfill, zones, reh, hC, hR, 80, melt, late);
-          if (tt.t_total > 30.5) continue;
-          const pk = Math.max(...tt.DI), score = 0.6 * pk + 0.4 * tt.DI[tt.DI.length - 1];
-          if (score < ((best[kind] && best[kind].score) ?? Infinity))
-            best[kind] = { score, di: pk, t: tt.t_total, mode: kind, zones, reh: copyReh(reh), h_cool: hC, h_reh: hR };
+          consider(kind, pin ? fitZones(zones, zones0, fix, budget) : zones, reh, hC, hR);
         }
     }
+    // the recipe as it stands competes too, so the answer is never worse than what the line runs now
+    if (zones0) consider(cur, zones0.map((z, i) => ({ T: +z.T, duration: +z.duration, label: "Zone " + (i + 1) })), reh0, +hCool0, +hReh0);
     return best;
   }
 
@@ -246,7 +272,7 @@
   }
 
   const API = { C, clip, rnd, lf, meltBand, evenBursts, burstSpans, nextBurst, syncPattern, buildTimeline, reheatKind,
-    zonePlan, optimise, rlbl, reheatSpans, heal, nearest, worstBest, categorise };
+    zonePlan, fitZones, optimise, rlbl, reheatSpans, heal, nearest, worstBest, categorise };
   G.PIDRL = API;
   if (typeof module !== "undefined" && module.exports) module.exports = API;
 })(typeof window !== "undefined" ? window : globalThis);

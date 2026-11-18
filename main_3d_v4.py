@@ -2265,6 +2265,26 @@ SITE_TR = {
     "s_prevent_small": ("The top reheat barely changes the peak here. Try hotter air, or bursts spread over "
                         "the first minutes of cooling."),
     "rh_without": "Peak without top reheat", "rh_prevent": "Damage prevented",
+    # Opening a saved recipe, and Keep fixed in step f (CBIC, 17 Nov 2026)
+    "s_open": "Open a saved recipe",
+    "s_open_hint": "Opens a .json file saved with \"Download the recipe\". You can also drop the file on this page.",
+    "s_open_bad": "{f} could not be read as a recipe saved from this site.",
+    "s_opened": "Opened {f}, saved on {d}.", "s_opened_nd": "Opened {f}.",
+    "s_open_adj": "Values outside this site's ranges were brought within them.",
+    "drl_help": ("Searches the cooling zones, air flow and top reheat for the lowest damage within 30 minutes. "
+                 "Settings marked Keep fixed stay as they are."),
+    "fx_k": "Keep fixed", "fx_help": "Settings the line cannot change. The search leaves them exactly as they are.",
+    "fx_cool": "Cooling", "fx_reh": "Top reheat",
+    "fx_n": "Number of zones", "fx_T": "Zone temperatures", "fx_D": "Zone times", "fx_hc": "Cooling air h",
+    "fx_mode": "Reheat timing", "fx_rT": "Hot-air temperature", "fx_rD": "Reheat time or bursts", "fx_hr": "Hot air h",
+    "fx_all": "all", "fx_some": "{k} of {n}", "fx_free": "free",
+    "fx_zones": "Or fix single zones: tap a value.", "fx_zT": "Temperature", "fx_zD": "Time",
+    "fx_zone_T": "Zone {n} temperature", "fx_zone_D": "Zone {n} time", "fx_bursts": "{n} × {s} s",
+    "fx_always": "The search never changes the fill ({f} °C), the melting point ({m} °C) or the late cooling air ({l} °C).",
+    "fx_count": "{n} settings kept fixed", "fx_kept": "Kept as set: {list}.",
+    "drl_same": "Within the fixed settings, your recipe is already the best: damage index {di:.3f}, {t:.0f} min.",
+    "drl_na_fix": ("Nothing fits within 30 minutes with these settings fixed. Free one of them, such as the zone "
+                   "times, and search again."),
   },
   "ja": {
     "s_loading": "ラインを冷却中", "s_menu": "メニュー",
@@ -2332,6 +2352,26 @@ SITE_TR = {
     "s_prevent_small": ("この条件では、上面再加熱による最大損傷指数の低下はわずかです。熱風温度を上げるか、"
                         "冷却初期にバーストを分散させてください。"),
     "rh_without": "上面再加熱なしの最大値", "rh_prevent": "抑えた損傷",
+    # 保存したレシピを開く、手順fの「固定する設定」（CBIC、2026年11月17日）
+    "s_open": "保存したレシピを開く",
+    "s_open_hint": "「レシピをダウンロード」で保存した.jsonファイルを開きます。ファイルをこのページにドロップしても開けます。",
+    "s_open_bad": "{f} は、このサイトで保存したレシピとして読み込めませんでした。",
+    "s_opened": "{f}（{d}保存）を開きました。", "s_opened_nd": "{f} を開きました。",
+    "s_open_adj": "このサイトの設定範囲外の値は、範囲内に調整しました。",
+    "drl_help": ("30分以内で損傷が最小となる冷却ゾーン、風量、上面の再加熱を探索します。"
+                 "「固定する設定」で選んだ項目はそのまま保ちます。"),
+    "fx_k": "固定する設定", "fx_help": "設備の都合で変更できない設定です。探索ではこの値をそのまま使います。",
+    "fx_cool": "冷却", "fx_reh": "上面の再加熱",
+    "fx_n": "ゾーン数", "fx_T": "ゾーン温度", "fx_D": "ゾーン時間", "fx_hc": "冷却空気 h",
+    "fx_mode": "再加熱のタイミング", "fx_rT": "熱風温度", "fx_rD": "再加熱時間・バースト", "fx_hr": "熱風 h",
+    "fx_all": "すべて", "fx_some": "{n}中{k}", "fx_free": "可変",
+    "fx_zones": "ゾーンごとに固定する場合は、値をタップしてください。", "fx_zT": "温度", "fx_zD": "時間",
+    "fx_zone_T": "ゾーン{n}の温度", "fx_zone_D": "ゾーン{n}の時間", "fx_bursts": "{n}回 × {s}秒",
+    "fx_always": "充填温度（{f} ℃）、融点（{m} ℃）、後半の冷却空気（{l} ℃）は探索で変更しません。",
+    "fx_count": "{n}項目を固定", "fx_kept": "固定した設定：{list}。",
+    "drl_same": "固定した設定の範囲では、現在のレシピが最良です。損傷指数 {di:.3f}、{t:.0f} 分。",
+    "drl_na_fix": ("この固定条件では、30分以内に収まる条件が見つかりません。ゾーン時間などの固定を一つ外して、"
+                   "再度探索してください。"),
   },
 }
 assert set(SITE_TR["en"]) == set(SITE_TR["ja"]), "SITE_TR: English and Japanese keys differ"

@@ -21,6 +21,53 @@ def recipe(sc):
                 h_reheat=sc.get("h_reheat", 12.0), melt=sc.get("melt", 67.0), late=sc.get("late_cool_T", 23.0))
 
 
+def FIXES(n):
+    """Lock sets for the site's Keep fixed: none, each one alone, a mixed set, and everything."""
+    off = dict(n=False, T=[False] * n, D=[False] * n, hc=False, mode=False, rT=False, rD=False, hr=False)
+    one = lambda **k: {**off, **k}
+    return [("none", off), ("count", one(n=True)), ("zone 1 T", one(T=[True] + [False] * (n - 1))),
+            ("all T", one(T=[True] * n)), ("last D", one(D=[False] * (n - 1) + [True])), ("all D", one(D=[True] * n)),
+            ("air", one(hc=True)), ("timing", one(mode=True)), ("hot-air T", one(rT=True)), ("hot-air time", one(rD=True, mode=True)),
+            ("reheat air", one(hr=True)), ("mixed", one(T=[True] + [False] * (n - 1), hc=True, rT=True)),
+            ("everything", one(n=True, T=[True] * n, D=[True] * n, hc=True, mode=True, rT=True, rD=True, hr=True))]
+
+
+def check_fixed(r, a, fix):
+    """Each result keeps every fixed setting exactly, and the recipe's own timing never scores worse than the recipe."""
+    bad, tag = [], f"fixed {r['name'][:30]} [{r['label']}]"
+    z0, reh0 = a["zones"], a["reheat"]
+    for k, b in r["js"].items():
+        z = b["zones"]
+        if (fix["n"] or any(fix["T"]) or any(fix["D"])) and len(z) != len(z0):
+            bad.append(f"{tag} {k}: {len(z)} zones, kept {len(z0)}")
+            continue
+        for i in range(len(z0)):
+            if fix["T"][i] and z[i]["T"] != z0[i]["T"]:
+                bad.append(f"{tag} {k}: zone {i + 1} T {z[i]['T']} vs {z0[i]['T']}")
+            if fix["D"][i] and z[i]["duration"] != z0[i]["duration"]:
+                bad.append(f"{tag} {k}: zone {i + 1} time {z[i]['duration']} vs {z0[i]['duration']}")
+        if fix["hc"] and b["h_cool"] != a["h_cool"]:
+            bad.append(f"{tag} {k}: h_cool {b['h_cool']}")
+        if fix["hr"] and b["h_reh"] != a["h_reheat"]:
+            bad.append(f"{tag} {k}: h_reheat {b['h_reh']}")
+        if (fix["mode"] or fix["rD"]) and k != r["kind"]:
+            bad.append(f"{tag}: timing {k}, kept {r['kind']}")
+        if fix["rT"] and b["reh"]["T"] != reh0["T"]:
+            bad.append(f"{tag} {k}: hot air {b['reh']['T']} vs {reh0['T']}")
+        if fix["rD"]:
+            for f in ("duration", "pulses", "pulse_sec", "pulse_window"):
+                if b["reh"].get(f) != reh0.get(f):
+                    bad.append(f"{tag} {k}: reheat {f} {b['reh'].get(f)} vs {reh0.get(f)}")
+    if r["cur"] is not None:
+        own = r["js"].get(r["kind"])
+        if own is None or own["score"] > r["cur"] + 1e-12:
+            bad.append(f"{tag}: worse than the recipe ({own and own['score']} vs {r['cur']})")
+    if all([fix["n"], all(fix["T"]), all(fix["D"]), fix["hc"], fix["mode"], fix["rT"], fix["rD"], fix["hr"]]):
+        if r["cur"] is not None and set(r["js"]) != {r["kind"]}:
+            bad.append(f"{tag}: everything fixed, yet {sorted(r['js'])}")
+    return bad
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")              # preset names carry emoji; Windows consoles default to cp932
     cases = {"timelines": [], "optimiser": []}
@@ -36,6 +83,12 @@ def main():
         for scope in ("cooling", "all"):
             cases["optimiser"].append({"name": name, "scope": scope, "args": a})
             py_o[(name, scope)] = M.optimise(a["T_fill"], a["reheat"], a["h_cool"], a["h_reheat"], a["melt"], a["late"], scope)
+    # fixed settings (JS only, the site's "Keep fixed"): every lock set on three presets
+    cases["fixed"] = []
+    for name in (list(M.SCENARIOS)[2], list(M.SCENARIOS)[5], list(M.SCENARIOS)[0]):
+        a = recipe(M.SCENARIOS[name]); n = len(a["zones"])
+        for label, fix in FIXES(n):
+            cases["fixed"].append({"name": name, "label": label, "fix": fix, "args": a})
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
         json.dump(cases, f)
     out = json.loads(subprocess.run(["node", str(ROOT / "tools" / "check_engine.js"), f.name], capture_output=True,
@@ -62,6 +115,9 @@ def main():
             if abs(p[k]["di"] - j[k]["di"]) > 1e-9 or abs(p[k]["t"] - j[k]["t"]) > 1e-9:
                 bad.append(f"optimiser {r['name']} {r['scope']} {k}: {p[k]['di']:.6f}/{p[k]['t']} vs {j[k]['di']:.6f}/{j[k]['t']}")
         print(f"optimiser {r['name'][:38]:38s} {r['scope']:8s}  " + ", ".join(f"{k} {p[k]['di']:.3f}" for k in sorted(p)))
+    for r in out["fixed"]:
+        bad += check_fixed(r, recipe(M.SCENARIOS[r["name"]]), dict(FIXES(len(M.SCENARIOS[r["name"]]["zones"])))[r["label"]])
+    print(f"fixed     {len(out['fixed'])} searches with settings kept: every kept setting unchanged, never worse than the recipe")
     print("OK" if not bad else "\n".join(["FAIL"] + bad))
     sys.exit(1 if bad else 0)
 
