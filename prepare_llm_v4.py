@@ -340,6 +340,9 @@ def build_lean_system_prompt() -> str:
         "of the question. "
         # The site's own controls, so questions about the page get the real names (CBIC asked
         # for an "Import" button the advisor had invented, Nov 2026).
+        "The PI-DRL web page is the only software the user has: it has no "
+        "File menu, no Import menu, no Recipes tab and no .rcp files, so "
+        "never describe those. "
         "If asked how to use the site: 'Download the recipe' (section 06, "
         "Report) saves the recipe as a .json file; 'Open a saved recipe' "
         "(Recipe, step a, and under the report) loads that file back, or "

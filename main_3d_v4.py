@@ -2151,23 +2151,26 @@ def _cases_tab(ats):
 @st.cache_resource(show_spinner=False, max_entries=2)
 def _load_advisor(version, mtime):
     """The advisor, cached per process. Its key is the retrain counter and the
-    mtime of llm_advisor_v4.py, and the module is reloaded, so a deploy or a
-    retrain builds a fresh instance from the current code (Streamlit re-runs
-    this script but keeps already imported modules)."""
+    newest mtime of the advisor's files, and their modules are reloaded, so a
+    deploy or a retrain builds a fresh instance from the current code (Streamlit
+    re-runs this script but keeps already imported modules). The prompt lives in
+    prepare_llm_v4.py: a change there alone must rebuild the advisor too."""
     try:
         import importlib
+        import prepare_llm_v4
         import llm_advisor_v4
+        importlib.reload(prepare_llm_v4)
         importlib.reload(llm_advisor_v4)
         return llm_advisor_v4.PILLMAdvisor()
     except ImportError:
         return None
 
+_ADVISOR_FILES = ("llm_advisor_v4.py", "prepare_llm_v4.py", "vector_store_v4.py", "knowledge_base_v4.json", "vector_store_v4.json")
+
 def _advisor():
     import os
-    try:
-        mtime = os.path.getmtime(os.path.join(os.path.dirname(os.path.abspath(__file__)), "llm_advisor_v4.py"))
-    except OSError:
-        mtime = 0.0
+    here = os.path.dirname(os.path.abspath(__file__))
+    mtime = max([os.path.getmtime(os.path.join(here, f)) for f in _ADVISOR_FILES if os.path.exists(os.path.join(here, f))] or [0.0])
     return _load_advisor(st.session_state.get("advisor_version", 0), mtime)
 
 def _init_chat():
