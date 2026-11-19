@@ -46,8 +46,10 @@
   const clone = o => JSON.parse(JSON.stringify(o));
 
   // Settings the line cannot change ("Keep fixed", step f): the optimiser leaves them as set. T and D hold one flag per zone.
-  const REH = ["mode", "rT", "rD", "hr"], FLAGS = ["n", "hc", ...REH];
-  const noFix = () => ({ n: false, T: [], D: [], hc: false, mode: false, rT: false, rD: false, hr: false });
+  // rN: burst count and lengths kept, positions searched; rH: hot air only in the first half of the line (CBIC, 18 Nov 2026).
+  const REH = ["mode", "rT", "rD", "hr"], FLAGS = ["n", "hc", ...REH, "rN", "rH"];
+  const noFix = () => ({ n: false, T: [], D: [], hc: false, mode: false, rT: false, rD: false, hr: false, rN: false, rH: false });
+  const allOn = a => a.length > 0 && a.every(Boolean);
   function readFix(x) {                                     // from storage or a saved file; anything odd counts as free
     const f = noFix(); if (!x || typeof x !== "object") return f;
     FLAGS.forEach(k => { f[k] = x[k] === true; });
@@ -57,17 +59,18 @@
   function normFix() {                                     // one flag per zone; a row fixed in full stays full as zones come
     const f = S.fix, n = S.r.zones.length;
     for (const k of ["T", "D"]) { const a = f[k], all = a.length > 0 && a.every(Boolean); while (a.length < n) a.push(all); a.length = n; }
-    if (f.rD) f.mode = true;                               // the hot-air time belongs to its timing
+    if (f.rD || (f.rN && S.r.reheat.mode === "pulsed")) f.mode = true;   // the hot-air time and the bursts belong to their timing
   }
   const pinned = f => f.n || f.T.some(Boolean) || f.D.some(Boolean);
-  const scopeOf = f => (REH.every(k => f[k]) ? "cooling" : REH.some(k => f[k]) ? "custom" : "all");
+  const isLine = f => allOn(f.D) && f.rN && f.rH && f.mode && !f.rD && !f.rT && !f.hr;
+  const scopeOf = f => (REH.every(k => f[k]) ? "cooling" : isLine(f) ? "line" : REH.some(k => f[k]) || f.rN || f.rH ? "custom" : "all");
   function keptList(f) {                                   // the fixed settings, named, for the result and the cases
     const out = [], n = f.T.length, all = a => a.length > 0 && a.every(Boolean);
     if (pinned(f)) out.push(t("fx_n"));
     for (const [k, whole, one] of [["T", "fx_T", "fx_zone_T"], ["D", "fx_D", "fx_zone_D"]]) {
       if (all(f[k])) out.push(t(whole)); else f[k].forEach((on, i) => { if (on && i < n) out.push(tf(one, { n: i + 1 })); });
     }
-    [["hc", "fx_hc"], ["mode", "fx_mode"], ["rT", "fx_rT"], ["rD", "fx_rD"], ["hr", "fx_hr"]].forEach(([k, l]) => { if (f[k]) out.push(t(l)); });
+    [["hc", "fx_hc"], ["mode", "fx_mode"], ["rT", "fx_rT"], ["rD", "fx_rD"], ["hr", "fx_hr"], ["rN", "fx_rN"], ["rH", "fx_rH"]].forEach(([k, l]) => { if (f[k]) out.push(t(l)); });
     return out;
   }
   function fromScenario(sc) {
@@ -157,7 +160,7 @@
 
   // ---------------------------------------------------------------- 02 the recipe: controls
   const SL = {
-    T_fill: { l: "s_l_fill", min: 75, max: 88, step: 0.5, u: "°C", get: r => r.T_fill, set: (r, v) => { r.T_fill = v; } },
+    T_fill: { l: "s_l_fill", min: 60, max: 88, step: 0.5, u: "°C", get: r => r.T_fill, set: (r, v) => { r.T_fill = v; } },
     reh_T: { l: "s_l_rehT", min: 40, max: 120, step: 1, u: "°C", get: r => r.reheat.T, set: (r, v) => { r.reheat.T = v; } },
     reh_D: { l: r => (r.reheat.mode === "simultaneous" ? "s_l_rehW" : "s_l_rehD"), h: r => (r.reheat.mode === "simultaneous" ? "reheat_window_help" : "reheat_help"),
       min: 0, max: 15, step: 0.5, u: "min", get: r => r.reheat.duration, set: (r, v) => { r.reheat.duration = v; } },
@@ -169,7 +172,7 @@
     h_cool: { l: "s_l_hc", min: 2, max: 20, step: 0.5, u: "W/m²K", get: r => r.h_cool, set: (r, v) => { r.h_cool = v; } },
     h_reh: { l: "s_l_hr", min: 5, max: 40, step: 0.5, u: "W/m²K", get: r => r.h_reheat, set: (r, v) => { r.h_reheat = v; } },
   };
-  const SL_FIX = { h_cool: "hc", reh_T: "rT", reh_D: "rD", pn: "rD", ps: "rD", pw: "rD", h_reh: "hr" };
+  const SL_FIX = { h_cool: ["hc"], reh_T: ["rT"], reh_D: ["rD"], pn: ["rD", "rN"], ps: ["rD", "rN"], pw: ["rD"], h_reh: ["hr"] };
   const unit = u => (u === "min" ? t("min") : u === "s" ? t("s_sec") : u);
   const tCool = () => S.r.zones.reduce((s, z) => s + z.duration, 0);
   function pattern(k, v) {                                 // a pattern slider moved: spread the bursts evenly again
@@ -190,7 +193,7 @@
     const k = el.dataset.key, s = SL[k], inp = $("input", el), v = +s.get(S.r);
     const l = typeof s.l === "function" ? s.l(S.r) : s.l, h = typeof s.h === "function" ? s.h(S.r) : s.h;
     $("label", el).textContent = t(l);
-    el.classList.toggle("fixed", !!(SL_FIX[k] && S.fix[SL_FIX[k]]));   // a lock mark: the optimiser keeps it
+    el.classList.toggle("fixed", (SL_FIX[k] || []).some(x => S.fix[x]));   // a lock mark: the optimiser keeps it
     if (h) el.title = t(h); else el.removeAttribute("title");
     if (document.activeElement !== inp) inp.value = v;
     inp.style.setProperty("--p", ((v - s.min) / (s.max - s.min) * 100).toFixed(1) + "%");
@@ -246,7 +249,7 @@
     if (pul) $$("#brows .zr").forEach((row, i) => {
       const b = reh.bursts[i];
       $$(".step", row).forEach(stp => { const inp = $("input", stp); if (document.activeElement !== inp) inp.value = stp.dataset.f === "bs" ? (+b[0]).toFixed(2) : String(b[1]);
-        stp.classList.toggle("fixed", S.fix.rD); });
+        stp.classList.toggle("fixed", S.fix.rD || (stp.dataset.f === "bd" && S.fix.rN)); });   // with rN only the start moves
       $(".x", row).disabled = reh.bursts.length <= 1;
     });
   }
@@ -354,11 +357,15 @@
       if (Tr != null) note = tf("reach", { T: Tr, flag: Tr >= S.ts.mushy[0] ? t("reach_ok") : t("reach_soft") });
       if (mode === "simultaneous") note += (note ? " " : "") + t("reheat_sim_note");
     }
+    if (S.fix.rH && S.ts.t_reheat > 0 && S.ts.reheat_end > S.ts.t_total / 2 + 1e-9) note += (note ? " " : "") + tf("fx_rH_out", { h: num(S.ts.t_total / 2, 1) });
     $("#rehNote").textContent = note;
+    const liq = r.melt + 5, hot = r.zones.findIndex(z => z.T >= r.T_fill);
+    $("#fillNote").textContent = [r.T_fill < liq ? tf("fill_below_melt", { f: num(r.T_fill, 1), liq: num(liq, 0) }) : "",
+      hot >= 0 ? tf("fill_zone_hot", { n: hot + 1, T: num(r.zones[hot].T, 1) }) : ""].filter(Boolean).join(" ");
     $("#meltNote").textContent = tf("mushy_note", { lo: r.melt - 5, hi: r.melt + 5 });
     // f: the optimiser, and what it must keep
     const sco = scopeOf(S.fix);
-    $("#scope").innerHTML = ["cooling", "all"].map(s => `<button type="button" data-s="${s}" class="${sco === s ? "on" : ""}" aria-pressed="${sco === s}">${esc(t("opt_scope_" + s))}</button>`).join("");
+    $("#scope").innerHTML = ["cooling", "line", "all"].map(s => `<button type="button" data-s="${s}" class="${sco === s ? "on" : ""}" aria-pressed="${sco === s}">${esc(t("opt_scope_" + s))}</button>`).join("");
     renderFix();
     const o = S.opt, kl = o && o.fix ? keptList(o.fix) : [], kept = kl.length ? `<p class="note">${esc(tf("fx_kept", { list: kl.join(LANG === "ja" ? "、" : ", ") }))}</p>` : "";
     if (!o) $("#optRes").innerHTML = "";
@@ -376,14 +383,15 @@
       `${LOCK}<span>${esc(label)}</span><b>${esc(val)}</b></button>`;
     const cell = (k, i, val, label) => `<button type="button" class="fx-v${f[k][i] ? " on" : ""}" data-fx="z${k}" data-i="${i}" aria-pressed="${!!f[k][i]}" aria-label="${esc(label)}">${LOCK}${esc(val)}</button>`;
     const time = reh.mode === "pulsed" ? tf("fx_bursts", { n: (reh.bursts || []).length, s: Math.trunc(reh.pulse_sec || 0) }) : `${num(+reh.duration || 0, 1)} ${t("min")}`;
-    const pin = f.T.some(Boolean) || f.D.some(Boolean);
+    const pin = f.T.some(Boolean) || f.D.some(Boolean), pul = reh.mode === "pulsed";
     $("#fx").innerHTML = `<div class="fx-k"><b>${esc(t("fx_k"))}</b><span>${esc(t("fx_help"))}</span></div>` +
       `<div class="fx-g"><span class="fx-l">${esc(t("fx_cool"))}</span><div>` +
         chip("n", t("fx_n"), String(n), f.n || pin, pin) + chip("T", t("fx_T"), part(nT), nT === n) + chip("D", t("fx_D"), part(nD), nD === n) +
         chip("hc", t("fx_hc"), `${num(r.h_cool, 1)} W/m²K`, f.hc) + `</div></div>` +
       `<div class="fx-g"><span class="fx-l">${esc(t("fx_reh"))}</span><div>` +
-        chip("mode", t("fx_mode"), t(MODE_KEY[E.reheatKind(reh)]), f.mode, f.rD) + chip("rT", t("fx_rT"), `${num(+reh.T, 0)} °C`, f.rT) +
-        chip("rD", t("fx_rD"), time, f.rD) + chip("hr", t("fx_hr"), `${num(r.h_reheat, 1)} W/m²K`, f.hr) + `</div></div>` +
+        chip("mode", t("fx_mode"), t(MODE_KEY[E.reheatKind(reh)]), f.mode, f.rD || (f.rN && pul)) + chip("rT", t("fx_rT"), `${num(+reh.T, 0)} °C`, f.rT) +
+        chip("rD", t(pul ? "fx_rD_p" : "fx_rD"), time, f.rD) + (pul ? chip("rN", t("fx_rN"), time, f.rN || f.rD, f.rD) : "") +
+        chip("hr", t("fx_hr"), `${num(r.h_reheat, 1)} W/m²K`, f.hr) + chip("rH", t("fx_rH"), tf("fx_rH_v", { h: num(S.ts.t_total / 2, 1) }), f.rH) + `</div></div>` +
       `<div class="fx-zw"><p class="fx-zk">${esc(t("fx_zones"))}</p><div class="fx-z" style="--n:${n}"><span></span>` +
         r.zones.map((z, i) => `<span class="fx-zh">${esc(tf("zone_n", { n: i + 1 }))}</span>`).join("") +
         `<span class="fx-l">${esc(t("fx_zT"))}</span>` + r.zones.map((z, i) => cell("T", i, `${num(z.T, 1)}°`, tf("fx_zone_T", { n: i + 1 }))).join("") +
@@ -395,14 +403,18 @@
     $("#presets").addEventListener("click", e => { const b = e.target.closest(".pre"); if (b) loadPreset(+b.dataset.i); });
     $("#scope").addEventListener("click", e => {          // the two shortcuts set the top reheat's four flags at once
       const b = e.target.closest("button[data-s]"); if (!b) return;
-      const keep = b.dataset.s === "cooling"; REH.forEach(k => { S.fix[k] = keep; }); fixChanged();
+      const f = S.fix;
+      if (b.dataset.s === "line") {                       // CBIC's line: zone times set by the conveyor, the bursts' count and length too, heaters in the first half
+        f.D = S.r.zones.map(() => true); f.rN = f.rH = f.mode = true; f.rD = f.rT = f.hr = false;
+      } else { const keep = b.dataset.s === "cooling"; REH.forEach(k => { f[k] = keep; }); if (!keep) f.rN = f.rH = false; }
+      fixChanged();
     });
     $("#fx").addEventListener("click", e => {
       const b = e.target.closest("button[data-fx]"); if (!b || b.disabled) return;
       const f = S.fix, k = b.dataset.fx;
       if (k === "T" || k === "D") { const all = f[k].length > 0 && f[k].every(Boolean); f[k] = f[k].map(() => !all); }
       else if (k === "zT" || k === "zD") { const a = f[k.slice(1)], i = +b.dataset.i; a[i] = !a[i]; }
-      else { f[k] = !f[k]; if (k === "mode" && !f.mode) f.rD = false; }
+      else { f[k] = !f[k]; if (k === "mode" && !f.mode) f.rD = f.rN = false; }
       fixChanged();
     });
     $("#optBtn").addEventListener("click", () => {
@@ -553,7 +565,7 @@
     $("#caseFigs").innerHTML = [[worst.peak, t("cat_worst")], [best.peak, t("cat_best")], [mine, tf("f_yours", { cat: t(ok ? "cat_good" : "cat_work") })]]
       .map(([v, l]) => `<div class="bn"><b style="color:${CH.rcol(v)}">${v.toFixed(3)}</b><span>${esc(l)}</span></div>`).join("");
     const sco = scopeOf(S.fix), nk = keptList(caseFix(A.scenarios[0])).length;
-    $("#caseScope").textContent = tf("cs_scope", { s: sco === "custom" ? tf("fx_count", { n: nk }) : t("opt_scope_" + sco) +
+    $("#caseScope").textContent = tf("cs_scope", { s: sco === "custom" ? tf("fx_count", { n: nk }) : sco === "line" ? t("opt_scope_line") : t("opt_scope_" + sco) +
       (nk > (sco === "cooling" ? REH.length : 0) ? (LANG === "ja" ? "、" : ", ") + tf("fx_count", { n: nk - (sco === "cooling" ? REH.length : 0) }) : "") });
     $("#caseAll").textContent = t("cs_opt_all");
     const col = { worst: RISK.CRITICAL, work: RISK.CAUTION, good: RISK.SAFE, best: RISK.SAFE };
@@ -576,7 +588,7 @@
   }
   function caseFix(sc) {                                  // the line's fixed settings, on a case's own values: single zones do not carry over
     const f = S.fix, n = sc.zones.length, all = a => a.length > 0 && a.every(Boolean);
-    return { n: f.n || all(f.T) || all(f.D), T: Array(n).fill(all(f.T)), D: Array(n).fill(all(f.D)), hc: f.hc, mode: f.mode, rT: f.rT, rD: f.rD, hr: f.hr };
+    return { n: f.n || all(f.T) || all(f.D), T: Array(n).fill(all(f.T)), D: Array(n).fill(all(f.D)), hc: f.hc, mode: f.mode, rT: f.rT, rD: f.rD, hr: f.hr, rN: f.rN, rH: f.rH };
   }
   const caseKey = sc => sc.id + "|" + JSON.stringify(caseFix(sc));
   function caseOpt(i) {
@@ -683,7 +695,8 @@
   }
   // The saved file names its fixed settings in words; FIX_FILE maps them to the page's flags and back.
   const FIX_FILE = { n: "zone_count", T: "zone_temperature", D: "zone_time", hc: "cooling_air_flow", mode: "reheat_timing",
-    rT: "hot_air_temperature", rD: "hot_air_time_or_bursts", hr: "reheat_air_flow" };
+    rT: "hot_air_temperature", rD: "hot_air_time_or_bursts", hr: "reheat_air_flow", rN: "burst_count_and_length",
+    rH: "hot_air_in_first_half_of_line" };
   function download() {
     const ts = S.ts, r = S.r, DI = Math.max(...ts.DI), made = new Date().toISOString().slice(0, 10);
     const out = { product: "LCWT401 deodorant stick", model: "PI-DRL v5", made,

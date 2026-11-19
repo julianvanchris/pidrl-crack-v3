@@ -226,16 +226,18 @@ def _reheat_kind(reh):
         return "none"
     return reh.get("mode", "sequential")
 
-def _zone_plan(T_fill, nz, dist, budget):
+def _zone_plan(T_fill, nz, dist, budget, melt=None):
     """nz cooling zones from the fill toward the target: time spread evenly,
-    front-loaded (top_heavy), or held in the mushy band (mushy_dwell)."""
+    front-loaded (top_heavy), or held in the mushy band (mushy_dwell). The
+    dwell band follows the melting point: 55-75 C for the default 67 C."""
+    m = T_MID_C if melt is None else float(melt)
     if dist == "top_heavy":
         temps = [T_fill - (T_fill - T_TARGET) * (((k + 1) / nz) ** 0.55) for k in range(nz)]
     else:
         step = (T_fill - T_TARGET) / nz
         temps = [T_fill - (k + 1) * step for k in range(nz)]
     if dist == "mushy_dwell":
-        raw = [6.0 if 55 <= T <= 75 else 3.0 for T in temps]
+        raw = [6.0 if m - 12 <= T <= m + 8 else 3.0 for T in temps]
         durs = [d * budget / sum(raw) for d in raw]
     else:
         durs = [budget / nz] * nz
@@ -269,7 +271,7 @@ def optimise(T_fill, reh0, h_cool0, h_reh0, melt, late, scope="all"):
                 for nz in ((3, 4) if lean else (3, 4, 5)):
                     for dist in (("mushy_dwell", "top_heavy") if lean
                                  else ("mushy_dwell", "linear", "top_heavy")):
-                        zones = _zone_plan(T_fill, nz, dist, budget)
+                        zones = _zone_plan(T_fill, nz, dist, budget, melt)
                         try:
                             tt = build_timeline(T_fill, zones, reh, h_c, h_reh, n_pts=80,
                                                 melt=melt, late_cool_T=late)
@@ -1151,10 +1153,11 @@ def build_timeline(T_fill,zones,reheat,h_cool,h_reheat,n_pts=120,
         else:
             k_form = 0.0  # fully solid → no new damage
 
-        # Healing driver: activated above 55°C (material softens)
+        # Healing driver: activated 12°C below the melting point, where the
+        # material softens (55°C for the default 67°C; lower-melting formulations soften earlier)
         # 3.5x stronger during active reheat phase → allows DI→0 for T_reheat≥85°C
         # Plus an anti-sink bonus while the surface is held hotter than the core.
-        hd     = max(0.0, T - 55.0) / 10.0
+        hd     = max(0.0, T - (t_mid - 12.0)) / 10.0
         in_reh = _surf_hot(tm) if surf_reheat else (reh_s <= tm < reh_e and t_reh > 0)
         k_heal = float(np.clip(hd * (3.5 if in_reh else 0.2) + 1.5 * inv_grad, 0.0, 2.5))
         # Analytical ODE integration — stable for any k_heal×dt value.
@@ -1485,7 +1488,7 @@ def sidebar():
 
     # 2 ─ Fill
     _sh(t("step_fill"))
-    T_fill=st.sidebar.slider(t("fill_label"),75.0,88.0,
+    T_fill=st.sidebar.slider(t("fill_label"),60.0,88.0,
         float(st.session_state.get("T_fill",T_FILL_DEF)),0.5)
     st.session_state.T_fill=T_fill
 
@@ -2285,6 +2288,16 @@ SITE_TR = {
     "fx_zone_T": "Zone {n} temperature", "fx_zone_D": "Zone {n} time", "fx_bursts": "{n} × {s} s",
     "fx_always": "The search never changes the fill ({f} °C), the melting point ({m} °C) or the late cooling air ({l} °C).",
     "fx_count": "{n} settings kept fixed", "fx_kept": "Kept as set: {list}.",
+    "opt_scope_line": "Within my line's limits",
+    "pattern_custom": ("Bursts placed one by one, by hand or by the optimiser. Move a slider or press Even spacing to "
+                       "spread them evenly again."),
+    "fx_rD_p": "Bursts as placed", "fx_rN": "Burst count and length", "fx_rH": "Hot air in the first half",
+    "fx_rH_v": "up to {h} min",
+    "fx_rH_out": ("Part of the hot air comes after {h} min, in the second half of the line. With 'Hot air in the first "
+                  "half' kept, the optimiser will not use this pattern."),
+    "fill_below_melt": ("At {f} °C the stick is not fully liquid: this material's melting band ends at {liq} °C. "
+                        "For a formulation that melts lower, set its melting point in step e."),
+    "fill_zone_hot": "Zone {n} ({T} °C) is warmer than the fill. Lower it in step c.",
     "drl_same": "Within the fixed settings, your recipe is already the best: damage index {di:.3f}, {t:.0f} min.",
     "drl_na_fix": ("Nothing fits within 30 minutes with these settings fixed. Free one of them, such as the zone "
                    "times, and search again."),
@@ -2372,6 +2385,15 @@ SITE_TR = {
     "fx_zone_T": "ゾーン{n}の温度", "fx_zone_D": "ゾーン{n}の時間", "fx_bursts": "{n}回 × {s}秒",
     "fx_always": "充填温度（{f} ℃）、融点（{m} ℃）、後半の冷却空気（{l} ℃）は探索で変更しません。",
     "fx_count": "{n}項目を固定", "fx_kept": "固定した設定：{list}。",
+    "opt_scope_line": "ラインの制約内で",
+    "pattern_custom": "バーストは個別に配置されています（手動または最適化による）。スライダーを動かすか「等間隔に戻す」で均等に戻せます。",
+    "fx_rD_p": "バースト（配置も固定）", "fx_rN": "バーストの回数と長さ", "fx_rH": "熱風はラインの前半のみ",
+    "fx_rH_v": "{h}分まで",
+    "fx_rH_out": ("熱風の一部が{h}分以降、つまりラインの後半にあります。「熱風はラインの前半のみ」を固定している場合、"
+                  "最適化ではこの配置を使いません。"),
+    "fill_below_melt": ("{f} ℃では完全な液体になりません。この材料の溶融帯の上限は{liq} ℃です。"
+                        "融点の低い処方の場合は、手順eで融点を設定してください。"),
+    "fill_zone_hot": "ゾーン{n}（{T} ℃）が充填温度より高くなっています。手順cで下げてください。",
     "drl_same": "固定した設定の範囲では、現在のレシピが最良です。損傷指数 {di:.3f}、{t:.0f} 分。",
     "drl_na_fix": ("この固定条件では、30分以内に収まる条件が見つかりません。ゾーン時間などの固定を一つ外して、"
                    "再度探索してください。"),
@@ -2428,7 +2450,7 @@ def _site_recipe(r):
         if b:
             reh["bursts"] = b
     sc = r.get("scenario")
-    return dict(T_fill=_num(r.get("T_fill"), 75, 88, T_FILL_DEF), zones=zones, reheat=reh,
+    return dict(T_fill=_num(r.get("T_fill"), 60, 88, T_FILL_DEF), zones=zones, reheat=reh,
                 h_cool=_num(r.get("h_cool"), 2, 20, 6.0), h_reheat=_num(r.get("h_reheat"), 5, 40, 12.0),
                 melt=_num(r.get("melt"), 40, 100, 67.0), late=_num(r.get("late"), 5, 30, 23.0),
                 scenario=sc if sc in SCENARIOS else "Custom")

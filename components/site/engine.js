@@ -152,7 +152,7 @@
       const cs = clip(Math.max(0, Tfill - Te[i]) / 60, 0, 1);
       const inv = clip((T - Tc_) / 20, 0, 1);              // surface warmer than the core: the sink cannot form
       const kForm = fl > 0.01 ? (0.60 * BiR * cs * (1 + 2 * mw) + 0.15 * BiR * cs) * (1 - 0.9 * inv) : 0;
-      const hd = Math.max(0, T - 55) / 10;
+      const hd = Math.max(0, T - (tMid - 12)) / 10;          // the material softens 12 C below its melting point
       const inReh = surfReheat ? surfHot(tm) : rehS <= tm && tm < rehE && tReh > 0;
       const kHeal = clip(hd * (inReh ? 3.5 : 0.2) + 1.5 * inv, 0, 2.5);
       const kT = kForm + kHeal;
@@ -182,12 +182,13 @@
     if (+(reh.duration || 0) <= 0) return "none";
     return reh.mode || "sequential";
   }
-  function zonePlan(Tfill, nz, dist, budget) {
+  function zonePlan(Tfill, nz, dist, budget, melt = null) {
+    const m = melt == null ? C.T_MID : +melt;             // the dwell band follows the melting point (55-75 C at 67 C)
     const temps = dist === "top_heavy"
       ? Array.from({ length: nz }, (_, k) => Tfill - (Tfill - C.T_TARGET) * Math.pow((k + 1) / nz, 0.55))
       : Array.from({ length: nz }, (_, k) => Tfill - (k + 1) * (Tfill - C.T_TARGET) / nz);
     let durs;
-    if (dist === "mushy_dwell") { const raw = temps.map(T => (T >= 55 && T <= 75 ? 6 : 3)); const r = sum(raw); durs = raw.map(d => d * budget / r); }
+    if (dist === "mushy_dwell") { const raw = temps.map(T => (T >= m - 12 && T <= m + 8 ? 6 : 3)); const r = sum(raw); durs = raw.map(d => d * budget / r); }
     else durs = temps.map(() => budget / nz);
     return temps.map((T, k) => ({ T: rnd(T, 1), duration: rnd(durs[k], 1), label: "Zone " + (k + 1) }));
   }
@@ -203,9 +204,22 @@
     out.forEach((z, i) => { if (!fD[i] && free > 0) z.duration = rnd(Math.max(0.5, plan[i].duration * room / free), 1); });
     return out;
   }
+  // rN keeps the bursts' number and lengths and moves them: a start and an even gap, the lengths in their order.
+  function moveBursts(reh) {
+    const b = reh.bursts && reh.bursts.length ? reh.bursts : evenBursts(reh.pulses || 0, reh.pulse_sec || 0, +(reh.pulse_window == null ? 6 : reh.pulse_window));
+    const d = b.slice().sort((x, y) => x[0] - y[0]).map(x => Math.trunc(x[1])), out = [];
+    for (const s0 of [0, 0.5, 1, 2]) for (const g of [0.6, 0.9, 1.2, 1.6, 2, 2.5]) {
+      const r = Object.assign(copyReh(reh), { bursts: d.map((sec, k) => [rnd(s0 + k * g, 3), sec]), custom: true });
+      syncPattern(r); out.push(r);
+    }
+    return out;
+  }
+  // fix.rN: the burst count and lengths stay (the line sets them by its speed); fix.rH: hot air only in the first half of
+  // the line, the whole time on the conveyor (CBIC's pulse heaters sit there). Both CBIC, 18 Nov 2026.
   function optimise(Tfill, reh0, hCool0, hReh0, melt, late, scope = "all", fix = null, zones0 = null) {
     reh0 = copyReh(reh0); fix = fix || {};
     const cur = reheatKind(reh0);
+    const keepN = !!fix.rN && !fix.rD && cur === "pulsed", nB = keepN ? moveBursts(reh0)[0].bursts.length : 0;
     let cands = [[cur, reh0, [+hReh0]]];
     if (scope === "all") {
       for (const T of [65, 72, 78, 85, 92, 100, 110]) for (const m of ["sequential", "simultaneous"])
@@ -213,19 +227,27 @@
       for (const T of [95, 105]) for (const np of [3, 5, 7])
         cands.push(["pulsed", { T, duration: 0, mode: "pulsed", pulses: np, pulse_sec: 20, pulse_window: 5 }, [18, 25]]);
     }
-    if (fix.mode || fix.rD || fix.rT || fix.hr) {         // the top reheat: keep what is fixed, search the rest
+    if (fix.mode || fix.rD || fix.rT || fix.hr || keepN) { // the top reheat: keep what is fixed, search the rest
       const seen = new Set();
-      cands = cands.filter(([kind]) => !((fix.mode || fix.rD) && kind !== cur)).map(([kind, reh, hRehs]) => {
-        const r = fix.rD ? Object.assign(copyReh(reh0), { T: reh.T }) : copyReh(reh);   // its time, or its bursts
+      cands = cands.filter(([kind]) => !((fix.mode || fix.rD || keepN) && kind !== cur)).map(([kind, reh, hRehs]) => {
+        const r = fix.rD || keepN ? Object.assign(copyReh(reh0), { T: reh.T }) : copyReh(reh);   // its time, or its bursts
         if (fix.rT) r.T = reh0.T;
         return [kind, r, fix.hr ? [+hReh0] : hRehs];
-      }).filter(c => { const k = JSON.stringify(c); return seen.has(k) ? false : seen.add(k); });
+      });
+      if (keepN) cands = cands.flatMap(([kind, r, hRehs]) => [[kind, r, hRehs], ...moveBursts(r).map(m => [kind, m, hRehs])]);
+      cands = cands.filter(c => { const k = JSON.stringify(c); return seen.has(k) ? false : seen.add(k); });
     }
     const pin = !!zones0 && (!!fix.n || (fix.T || []).some(Boolean) || (fix.D || []).some(Boolean));
+    const cur0 = zones0 && zones0.map((z, i) => ({ T: +z.T, duration: +z.duration, label: "Zone " + (i + 1) }));
+    // with any setting kept, the line's own zones join the grid, so freeing one more setting never scores worse;
+    // with none kept, the search stays the one the demo recorded (Oct 2026)
+    const own = cur0 && (pin || ["hc", "mode", "rT", "rD", "hr", "rN", "rH"].some(k => fix[k])) ? cur0 : null;
     const best = {};
     const consider = (kind, zones, reh, hC, hR) => {
       const tt = buildTimeline(Tfill, zones, reh, hC, hR, 80, melt, late);
       if (tt.t_total > 30.5) return;
+      if (fix.rH && tt.t_reheat > 0 && tt.reheat_end > tt.t_total / 2 + 1e-9) return;
+      if (keepN && tt.n_pulse !== nB) return;             // a burst fell past the end of the cooling
       const pk = Math.max(...tt.DI), score = 0.6 * pk + 0.4 * tt.DI[tt.DI.length - 1];
       if (score < ((best[kind] && best[kind].score) ?? Infinity))
         best[kind] = { score, di: pk, t: tt.t_total, mode: kind, zones, reh: copyReh(reh), h_cool: hC, h_reh: hR };
@@ -234,14 +256,16 @@
       const overlap = kind !== "sequential";
       const budget = overlap ? 27 : 30 - +(reh.duration || 0) - 3;
       const lean = kind === "pulsed";
-      for (const hR of hRehs) for (const hC of fix.hc ? [+hCool0] : [+hCool0, Math.max(2, +hCool0 * 0.6)])
+      for (const hR of hRehs) for (const hC of fix.hc ? [+hCool0] : [+hCool0, Math.max(2, +hCool0 * 0.6)]) {
         for (const nz of pin ? [zones0.length] : lean ? [3, 4] : [3, 4, 5]) for (const dist of lean ? ["mushy_dwell", "top_heavy"] : ["mushy_dwell", "linear", "top_heavy"]) {
-          const zones = zonePlan(Tfill, nz, dist, budget);
+          const zones = zonePlan(Tfill, nz, dist, budget, melt);
           consider(kind, pin ? fitZones(zones, zones0, fix, budget) : zones, reh, hC, hR);
         }
+        if (own) consider(kind, own, reh, hC, hR);       // the line's own zones with this reheat: freeing a setting never scores worse
+      }
     }
     // the recipe as it stands competes too, so the answer is never worse than what the line runs now
-    if (zones0) consider(cur, zones0.map((z, i) => ({ T: +z.T, duration: +z.duration, label: "Zone " + (i + 1) })), reh0, +hCool0, +hReh0);
+    if (cur0) consider(cur, cur0, reh0, +hCool0, +hReh0);
     return best;
   }
 
@@ -272,7 +296,7 @@
   }
 
   const API = { C, clip, rnd, lf, meltBand, evenBursts, burstSpans, nextBurst, syncPattern, buildTimeline, reheatKind,
-    zonePlan, fitZones, optimise, rlbl, reheatSpans, heal, nearest, worstBest, categorise };
+    zonePlan, fitZones, moveBursts, optimise, rlbl, reheatSpans, heal, nearest, worstBest, categorise };
   G.PIDRL = API;
   if (typeof module !== "undefined" && module.exports) module.exports = API;
 })(typeof window !== "undefined" ? window : globalThis);

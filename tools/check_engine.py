@@ -23,12 +23,14 @@ def recipe(sc):
 
 def FIXES(n):
     """Lock sets for the site's Keep fixed: none, each one alone, a mixed set, and everything."""
-    off = dict(n=False, T=[False] * n, D=[False] * n, hc=False, mode=False, rT=False, rD=False, hr=False)
+    off = dict(n=False, T=[False] * n, D=[False] * n, hc=False, mode=False, rT=False, rD=False, hr=False, rN=False, rH=False)
     one = lambda **k: {**off, **k}
     return [("none", off), ("count", one(n=True)), ("zone 1 T", one(T=[True] + [False] * (n - 1))),
             ("all T", one(T=[True] * n)), ("last D", one(D=[False] * (n - 1) + [True])), ("all D", one(D=[True] * n)),
             ("air", one(hc=True)), ("timing", one(mode=True)), ("hot-air T", one(rT=True)), ("hot-air time", one(rD=True, mode=True)),
             ("reheat air", one(hr=True)), ("mixed", one(T=[True] + [False] * (n - 1), hc=True, rT=True)),
+            ("burst count", one(rN=True)), ("first half", one(rH=True)),
+            ("line limits", one(D=[True] * n, rN=True, rH=True, mode=True)),
             ("everything", one(n=True, T=[True] * n, D=[True] * n, hc=True, mode=True, rT=True, rD=True, hr=True))]
 
 
@@ -54,6 +56,15 @@ def check_fixed(r, a, fix):
             bad.append(f"{tag}: timing {k}, kept {r['kind']}")
         if fix["rT"] and b["reh"]["T"] != reh0["T"]:
             bad.append(f"{tag} {k}: hot air {b['reh']['T']} vs {reh0['T']}")
+        if fix["rN"] and not fix["rD"] and r["kind"] == "pulsed":
+            lens = lambda rh: ([int(x[1]) for x in sorted(rh["bursts"], key=lambda x: x[0])] if rh.get("bursts")
+                               else [int(rh.get("pulse_sec", 0))] * int(rh.get("pulses", 0)))
+            if lens(b["reh"]) != lens(reh0) or len(lens(reh0)) == 0:
+                bad.append(f"{tag} {k}: bursts {b['reh'].get('bursts')} vs {reh0.get('bursts')}")
+        if fix["rH"]:                                     # the Python model is the judge of where the hot air ends
+            tt = M.build_timeline(a["T_fill"], z, b["reh"], b["h_cool"], b["h_reh"], n_pts=80, melt=a["melt"], late_cool_T=a["late"])
+            if tt["t_reheat"] > 0 and tt["reheat_end"] > tt["t_total"] / 2 + 1e-9:
+                bad.append(f"{tag} {k}: hot air ends at {tt['reheat_end']:.2f} of {tt['t_total']:.2f} min")
         if fix["rD"]:
             for f in ("duration", "pulses", "pulse_sec", "pulse_window"):
                 if b["reh"].get(f) != reh0.get(f):
@@ -78,6 +89,15 @@ def main():
                               melt=a["melt"], late_cool_T=a["late"])
         cases["timelines"].append({"name": name, "args": a})
         py_t[name] = ts
+    for name in (list(M.SCENARIOS)[2], list(M.SCENARIOS)[5]):
+        a = dict(recipe(M.SCENARIOS[name]), T_fill=60.0, melt=50.0)
+        a["zones"] = [dict(z, T=min(z["T"], 59.0)) for z in a["zones"]]
+        low = "low fill 60 C, melt 50 C: " + name
+        cases["timelines"].append({"name": low, "args": a})
+        py_t[low] = M.build_timeline(a["T_fill"], a["zones"], a["reheat"], a["h_cool"], a["h_reheat"], n_pts=120,
+                                     melt=a["melt"], late_cool_T=a["late"])
+        cases["optimiser"].append({"name": low, "scope": "all", "args": a})
+        py_o[(low, "all")] = M.optimise(a["T_fill"], a["reheat"], a["h_cool"], a["h_reheat"], a["melt"], a["late"], "all")
     for name in (list(M.SCENARIOS)[2], list(M.SCENARIOS)[5], list(M.SCENARIOS)[0]):
         a = recipe(M.SCENARIOS[name])
         for scope in ("cooling", "all"):

@@ -349,10 +349,15 @@ def build_lean_system_prompt() -> str:
         "the file can be dropped on the page. In step f, 'Keep fixed' marks "
         "settings the line cannot change (number of zones, zone "
         "temperatures or times, single zones, cooling air h, reheat "
-        "timing, hot-air temperature, reheat time or bursts, hot air h); "
-        "'Find the best recipe' then leaves them as set, and never changes "
-        "the fill temperature, melting point or late cooling air. Name no "
-        "other buttons or features."
+        "timing, hot-air temperature, reheat time or bursts, hot air h, "
+        "burst count and length (the positions are then searched), and hot "
+        "air in the first half of the line); the shortcut 'Within my line's "
+        "limits' keeps the zone times, the burst count and length, and the "
+        "hot air in the first half. 'Find the best recipe' then leaves them "
+        "as set, and never changes the fill temperature, melting point or "
+        "late cooling air. The fill temperature can be set from 60 to 88 °C "
+        "(step b); for a lower-melting formulation, set its melting point "
+        "in step e. Name no other buttons or features."
     )
 
 
